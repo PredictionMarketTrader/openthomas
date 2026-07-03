@@ -205,7 +205,7 @@ class Agent:
     def reflect(self) -> str:
         return self.lessons.reflect(self.journal, self.forecaster._complete)
 
-    def run_forever(self, on_report=None) -> None:
+    def run_forever(self, on_report=None) -> CycleReport:
         while True:
             report = self.cycle()
             if on_report:
@@ -216,7 +216,7 @@ class Agent:
                 except Exception:
                     pass
             if report.halted:
-                break
+                return report
             # ±30% jitter: a fixed cadence is a signature other agents can time
             # (e.g. quoting wide just before our cycle and picking us off).
             time.sleep(self.s.cycle_minutes * 60 * random.uniform(0.7, 1.3))

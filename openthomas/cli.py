@@ -115,7 +115,9 @@ def run(
         _print_report(agent.cycle())
     else:
         console.print(f"Trading loop started · every {s.cycle_minutes}m · Ctrl-C to stop")
-        agent.run_forever(on_report=_print_report)
+        final = agent.run_forever(on_report=_print_report)
+        if final.halted:
+            raise typer.Exit(3)  # distinct code so supervisors don't blind-restart
 
 
 @app.command()
