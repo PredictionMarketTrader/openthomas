@@ -126,6 +126,7 @@ Any strong reasoning model via Anthropic or OpenAI-compatible APIs. Local Gemma-
 
 - [Architecture & design rationale](docs/DESIGN.md)
 - [The edge playbook — documented inefficiencies with sources](docs/EDGE.md)
+- [Trading against agents — the adversarial playbook](docs/ADVERSARIAL.md)
 - [Live trading setup (Kalshi, Polymarket)](docs/LIVE_TRADING.md)
 - [Training a local forecaster on your journal](docs/TRAINING.md)
 

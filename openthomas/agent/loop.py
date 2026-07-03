@@ -6,6 +6,7 @@ lacked. Every step logs to the journal; every decision carries its reason.
 
 from __future__ import annotations
 
+import random
 import time
 from dataclasses import dataclass, field
 
@@ -164,6 +165,18 @@ class Agent:
             )
             try:
                 if self.s.mode == "live":
+                    # Stale-quote guard: prices were fetched at cycle start and the
+                    # LLM call took seconds — long enough for a faster agent to move
+                    # the book. Re-validate the edge at execution time.
+                    fresh = self.connectors[market.platform].get_market(market.id) or market
+                    fresh_price = fresh.price_to_buy(side)
+                    p_side = p_trade if side is Side.YES else 1 - p_trade
+                    if fresh_price is None or p_side - fresh_price - fee < self.s.risk.min_edge:
+                        report.rejections.append(
+                            f"{market.question[:50]}: quote moved, edge gone at execution"
+                        )
+                        continue
+                    order.limit_price = min(price, fresh_price)
                     fill = self.connectors[market.platform].place_order(order)
                 else:
                     fill = self.broker.execute(order, market)
@@ -196,4 +209,6 @@ class Agent:
                     pass
             if report.halted:
                 break
-            time.sleep(self.s.cycle_minutes * 60)
+            # ±30% jitter: a fixed cadence is a signature other agents can time
+            # (e.g. quoting wide just before our cycle and picking us off).
+            time.sleep(self.s.cycle_minutes * 60 * random.uniform(0.7, 1.3))
