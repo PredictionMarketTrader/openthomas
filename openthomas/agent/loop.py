@@ -20,6 +20,7 @@ from ..markets.paper import InsufficientLiquidity, PaperBroker
 from ..markets.polymarket import PolymarketConnector
 from ..memory.journal import Journal
 from ..memory.lessons import LessonBook
+from ..research.news import NewsDesk
 from ..risk.engine import PortfolioState, RiskEngine
 
 
@@ -53,6 +54,7 @@ class Agent:
         self.lessons = LessonBook(settings.lessons_dir)
         self._scalers: dict[str, PlattScaler] = {}
         self.forecaster = ForecastEngine(settings.forecaster, calibrate=self._calibrate)
+        self.news = NewsDesk() if settings.news_enabled else None
 
     # --- calibration -----------------------------------------------------------
     def _calibrate(self, p_raw: float, category: str) -> float:
@@ -133,7 +135,13 @@ class Agent:
             if market.id in positioned or self.journal.has_recent_forecast(market.id):
                 continue
 
-            forecast = self.forecaster.forecast(market, lessons_text)
+            news = ""
+            if self.news:
+                try:
+                    news = self.news.brief(market.question, self.s.news_max_articles)
+                except Exception:
+                    pass
+            forecast = self.forecaster.forecast(market, lessons_text, news)
             report.forecasts += 1
             if forecast is None:
                 continue

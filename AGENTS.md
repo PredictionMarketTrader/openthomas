@@ -10,6 +10,7 @@ Python 3.10+, package in `openthomas/`, tests in `tests/` (pytest), deps via
 - `openthomas/markets/` — connectors (`base.py` = unified model; `paper.py` =
   simulated fills at bid/ask on real data)
 - `openthomas/forecast/` — LLM ensemble engine + Platt calibration
+- `openthomas/research/news.py` — keyless news retrieval (GDELT, Google News RSS)
 - `openthomas/edge/scanner.py` — pre-LLM filters + cross-platform arb detection
 - `openthomas/risk/engine.py` — Kelly sizing, caps, drawdown kill-switch
 - `openthomas/memory/` — SQLite journal + lesson distillation

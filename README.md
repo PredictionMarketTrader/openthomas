@@ -141,7 +141,7 @@ Any strong reasoning model via Anthropic or OpenAI-compatible APIs. Local Gemma-
 - [ ] Polymarket live execution via official SDK (pUSD)
 - [ ] NegRisk / multi-outcome coherence arbitrage
 - [ ] Market-making strategy (maker rebates + liquidity incentive programs)
-- [ ] News retrieval pipeline for forecasts (the #1 accuracy lever)
+- [x] News retrieval pipeline for forecasts (GDELT + Google News, keyless)
 - [ ] Web dashboard, Telegram/Discord notifications
 - [ ] Journal → LoRA fine-tuning recipes for local models
 - [ ] Public community leaderboard of (opt-in) vitals

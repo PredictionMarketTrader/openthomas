@@ -84,6 +84,8 @@ class Settings(BaseModel):
     risk: RiskProfile = Field(default_factory=RiskProfile)
     forecaster: ModelConfig = Field(default_factory=ModelConfig)
     cycle_minutes: int = 30
+    news_enabled: bool = True  # free keyless retrieval (GDELT + Google News RSS)
+    news_max_articles: int = 6
     home: Path = HOME
 
     @property
