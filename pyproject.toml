@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "openthomas"
-version = "0.1.0"
+version = "0.1.1"
 description = "Autonomous AI trading agent for prediction markets (Polymarket, Kalshi): finds edge, manages risk, trades, and learns."
 readme = "README.md"
 license = "MIT"
