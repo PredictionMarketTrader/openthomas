@@ -84,6 +84,20 @@ openthomas init --provider openai --base-url http://localhost:11434/v1 --model g
 
 Any OpenAI-compatible server works — Ollama, vLLM, llama.cpp. If you have GPUs, [docs/TRAINING.md](docs/TRAINING.md) covers fine-tuning a local model on your own trade journal (calibration LoRA) so the agent's forecaster improves on *your* markets.
 
+## Use it from Claude (MCP)
+
+Your agent brings the market view; OpenThomas enforces the discipline:
+
+```bash
+pip install 'openthomas[mcp]'
+claude mcp add openthomas -- openthomas-mcp
+```
+
+Now Claude (or OpenClaw, Hermes, any MCP client) can scan markets, pull news,
+and `propose_trade` — every proposal is blended with the market price, sized
+with fractional Kelly, and checked against hard exposure caps before a paper
+fill. Rejections name the binding constraint. See [docs/MCP.md](docs/MCP.md).
+
 ## Risk profiles
 
 You hand OpenThomas a mandate, not a suggestion — these are enforced in deterministic code, outside the LLM:
@@ -142,6 +156,7 @@ Any strong reasoning model via Anthropic or OpenAI-compatible APIs. Local Gemma-
 - [ ] NegRisk / multi-outcome coherence arbitrage
 - [ ] Market-making strategy (maker rebates + liquidity incentive programs)
 - [x] News retrieval pipeline for forecasts (GDELT + Google News, keyless)
+- [x] MCP server — Claude/any agent brings the view, OpenThomas enforces risk ([docs](docs/MCP.md))
 - [ ] Web dashboard, Telegram/Discord notifications
 - [ ] Journal → LoRA fine-tuning recipes for local models
 - [ ] Public community leaderboard of (opt-in) vitals

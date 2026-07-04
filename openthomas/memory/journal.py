@@ -43,6 +43,9 @@ class Journal:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(str(path))
         self.db.row_factory = sqlite3.Row
+        # WAL: the trading loop and the MCP server share this file across processes.
+        self.db.execute("PRAGMA journal_mode=WAL")
+        self.db.execute("PRAGMA busy_timeout=5000")
         self.db.executescript(SCHEMA)
 
     # --- writes ---------------------------------------------------------------

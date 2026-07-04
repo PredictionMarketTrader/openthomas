@@ -15,6 +15,7 @@ Python 3.10+, package in `openthomas/`, tests in `tests/` (pytest), deps via
 - `openthomas/risk/engine.py` — Kelly sizing, caps, drawdown kill-switch
 - `openthomas/memory/` — SQLite journal + lesson distillation
 - `openthomas/cli.py` — typer CLI (`init/scan/run/report/vital`)
+- `openthomas/mcp_server.py` — MCP server (`openthomas-mcp`); paper-only by design
 - `docs/DESIGN.md` — architecture rationale; `docs/EDGE.md` — strategy basis
 
 ## Hard rules
