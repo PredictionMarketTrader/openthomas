@@ -1,5 +1,7 @@
 # OpenThomas — AI trading agent for prediction markets
 
+[![PyPI](https://img.shields.io/pypi/v/openthomas)](https://pypi.org/project/openthomas/) [![CI](https://github.com/autotradingagent/openthomas/actions/workflows/ci.yml/badge.svg)](https://github.com/autotradingagent/openthomas/actions) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://pypi.org/project/openthomas/)
+
 **An autonomous AI agent that trades Polymarket and Kalshi for you: it scans thousands of markets, forecasts with an LLM ensemble, sizes positions with fractional Kelly, and enforces risk limits the model can't override. You set the bankroll, the risk profile, and the goal. It does the rest — and learns from every settled trade.**
 
 ```bash
