@@ -158,6 +158,19 @@ class Journal:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    def scope_performance(self, scope: str, since_ts: str) -> dict:
+        """Post-adoption track record for a playbook rule: settlements after
+        `since_ts` whose question or category contains `scope`."""
+        like = f"%{scope.lower()}%"
+        row = self.db.execute(
+            """SELECT COUNT(*) AS n, COALESCE(SUM(pnl), 0) AS pnl,
+                      COALESCE(AVG(CASE WHEN pnl > 0 THEN 1.0 ELSE 0.0 END), 0) AS win_rate
+               FROM settlements
+               WHERE ts >= ? AND (LOWER(question) LIKE ? OR LOWER(category) LIKE ?)""",
+            (since_ts, like, like),
+        ).fetchone()
+        return dict(row)
+
     def equity_curve(self) -> list[tuple[str, float]]:
         rows = self.db.execute("SELECT ts, account_value FROM cycles ORDER BY ts").fetchall()
         return [(r["ts"], r["account_value"]) for r in rows]
