@@ -78,6 +78,23 @@ class PolymarketConnector(MarketConnector):
             offset += len(page)
         return markets[:limit]
 
+    def list_weather_markets(self, limit: int = 300) -> list[Market]:
+        """Markets under weather-tagged events. Thin on Polymarket (mostly
+        long-horizon climate questions); the daily temperature flow is Kalshi's."""
+        events = self.http.get(
+            "/events",
+            params={"tag_slug": "weather", "active": "true", "closed": "false", "limit": 100},
+        ).json()
+        markets: list[Market] = []
+        for event in events if isinstance(events, list) else []:
+            for raw in event.get("markets") or []:
+                # Nested markets lack the parent link _to_market reads.
+                m = self._to_market({**raw, "events": [event]})
+                if m is not None and m.yes_bid is not None:
+                    m.category = m.category or "weather"
+                    markets.append(m)
+        return markets[:limit]
+
     def get_market(self, market_id: str) -> Market | None:
         page = self.http.get("/markets", params={"condition_ids": market_id}).json()
         return self._to_market(page[0]) if page else None

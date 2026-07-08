@@ -1,0 +1,284 @@
+import json
+from datetime import date, datetime, timezone
+
+import httpx
+
+from openthomas.markets.base import Market
+from openthomas.markets.kalshi import KalshiConnector
+from openthomas.markets.polymarket import PolymarketConnector
+from openthomas.weather import NWSClient, OpenMeteoClient, WeatherDesk
+from openthomas.weather.nws import c_to_f
+from openthomas.weather.stations import STATIONS, station_for_market, target_date, weather_series
+from openthomas.weather.strikes import parse_strike
+
+
+def mk(id="KXHIGHNY-26JUL08-T83", platform="kalshi",
+       question="Will the high temp in NYC be >83° on Jul 8, 2026?", **kw):
+    return Market(id=id, platform=platform, question=question, **kw)
+
+
+def mock_client(handler, base_url="https://example.test"):
+    return httpx.Client(transport=httpx.MockTransport(handler), base_url=base_url)
+
+
+# --- strikes ---------------------------------------------------------------
+
+def test_strike_greater():
+    s = parse_strike(mk(strike_type="greater", floor_strike=83.0))
+    assert s.covers(84) and s.covers(90.5)
+    assert not s.covers(83)
+    assert s.describe() == "> 83°F"
+
+
+def test_strike_less():
+    s = parse_strike(mk(strike_type="less", cap_strike=76.0))
+    assert s.covers(75) and not s.covers(76)
+    assert s.describe() == "< 76°F"
+
+
+def test_strike_between_inclusive():
+    s = parse_strike(mk(strike_type="between", floor_strike=82.0, cap_strike=83.0))
+    assert s.covers(82) and s.covers(83)
+    assert not s.covers(81) and not s.covers(84)
+
+
+def test_strike_missing_fields():
+    assert parse_strike(mk()) is None
+    assert parse_strike(mk(strike_type="greater")) is None
+
+
+# --- stations ---------------------------------------------------------------
+
+def test_station_from_kalshi_ticker():
+    station, kind = station_for_market(mk())
+    assert station.obs_id == "KNYC" and kind == "high"
+    station, kind = station_for_market(mk(id="KXLOWTSATX-26JUL08-T77"))
+    assert station.obs_id == "KSAT" and kind == "low"
+
+
+def test_station_from_question_text():
+    m = mk(id="0xabc", platform="polymarket",
+           question="Highest temperature in Miami on July 8?")
+    station, kind = station_for_market(m)
+    assert station.obs_id == "KMIA" and kind == "high"
+
+
+def test_station_unknown_market():
+    assert station_for_market(mk(id="0xdef", platform="polymarket",
+                                 question="Will it rain in Paris this July?")) is None
+    assert station_for_market(mk(id="KXBTC-26JUL08-T100000",
+                                 question="Bitcoin above 100k?")) is None
+
+
+def test_weather_series_covers_known_cities():
+    assert "KXHIGHNY" in weather_series() and "KXLOWTMIA" in weather_series()
+
+
+def test_target_date_from_ticker():
+    assert target_date(mk(), STATIONS["nyc"]) == date(2026, 7, 8)
+
+
+def test_target_date_from_close_time_rolls_back_past_midnight():
+    # Closes 03:59 UTC Jul 9 = 23:59 EDT Jul 8 → the market is about Jul 8.
+    m = mk(id="0xabc", platform="polymarket",
+           close_time=datetime(2026, 7, 9, 3, 59, tzinfo=timezone.utc))
+    assert target_date(m, STATIONS["nyc"]) == date(2026, 7, 8)
+
+
+# --- NWS ---------------------------------------------------------------------
+
+CLI_TEXT = """
+000
+CDUS41 KOKX 090635
+CLINYC
+
+CLIMATE REPORT
+NATIONAL WEATHER SERVICE NEW YORK, NY
+235 AM EDT THU JUL 9 2026
+
+...THE CENTRAL PARK NY CLIMATE SUMMARY FOR JULY 8 2026...
+
+TEMPERATURE (F)
+ YESTERDAY
+  MAXIMUM         84    252 PM
+  MINIMUM         71    509 AM
+  AVERAGE         78
+"""
+
+
+def nws_handler(request: httpx.Request) -> httpx.Response:
+    path = request.url.path
+    if path == "/products/types/CLI/locations/NYC":
+        return httpx.Response(200, json={"@graph": [
+            {"@id": "https://example.test/products/abc", "issuanceTime": "2026-07-09T06:35:00Z"},
+        ]})
+    if path == "/products/abc":
+        return httpx.Response(200, json={"productText": CLI_TEXT})
+    if path == "/stations/KNYC/observations":
+        return httpx.Response(200, json={"features": [
+            {"properties": {"temperature": {"value": 20.6}}},
+            {"properties": {"temperature": {"value": 25.0}}},
+            {"properties": {"temperature": {"value": None}}},
+        ]})
+    return httpx.Response(404)
+
+
+def test_climate_extreme_parses_settlement_high():
+    nws = NWSClient(client=mock_client(nws_handler))
+    assert nws.climate_extreme(STATIONS["nyc"], date(2026, 7, 8), "high") == 84.0
+    assert nws.climate_extreme(STATIONS["nyc"], date(2026, 7, 8), "low") == 71.0
+    # A report for a different day must not settle this one.
+    assert nws.climate_extreme(STATIONS["nyc"], date(2026, 7, 7), "high") is None
+
+
+def test_observed_extreme_today_converts_and_filters():
+    nws = NWSClient(client=mock_client(nws_handler))
+    assert nws.observed_extreme_today(STATIONS["nyc"], "high") == c_to_f(25.0)
+    assert nws.observed_extreme_today(STATIONS["nyc"], "low") == c_to_f(20.6)
+
+
+# --- Open-Meteo ----------------------------------------------------------------
+
+def meteo_handler(request: httpx.Request) -> httpx.Response:
+    return httpx.Response(200, json={"daily": {
+        "time": ["2026-07-08", "2026-07-09"],
+        "temperature_2m_max_gfs_seamless": [83.3, 82.8],
+        "temperature_2m_max_ecmwf_ifs025": [82.5, None],
+        "temperature_2m_min_gfs_seamless": [70.1, 69.4],
+    }})
+
+
+def test_daily_extremes_by_model():
+    meteo = OpenMeteoClient(client=mock_client(meteo_handler))
+    out = meteo.daily_extremes(STATIONS["nyc"])
+    assert out["2026-07-08"]["high"] == {"gfs_seamless": 83.3, "ecmwf_ifs025": 82.5}
+    assert out["2026-07-09"]["high"] == {"gfs_seamless": 82.8}  # null dropped
+    assert out["2026-07-08"]["low"] == {"gfs_seamless": 70.1}
+
+
+def test_daily_extremes_single_model_unsuffixed():
+    def handler(request):
+        return httpx.Response(200, json={"daily": {
+            "time": ["2026-07-08"], "temperature_2m_max": [83.3],
+        }})
+    meteo = OpenMeteoClient(client=mock_client(handler), models=["gfs_seamless"])
+    assert meteo.daily_extremes(STATIONS["nyc"])["2026-07-08"]["high"] == {"gfs_seamless": 83.3}
+
+
+# --- connectors: weather listings ---------------------------------------------
+
+KALSHI_RAW = {
+    "ticker": "KXHIGHNY-26JUL08-T83", "event_ticker": "KXHIGHNY-26JUL08",
+    "title": "Will the **high temp in NYC** be >83° on Jul 8, 2026?",
+    "yes_bid_dollars": "0.2500", "yes_ask_dollars": "0.2700",
+    "volume_24h_fp": "25460.08", "liquidity_dollars": "0.0000",
+    "open_interest_fp": "17653.59", "close_time": "2026-07-09T04:59:00Z",
+    "strike_type": "greater", "floor_strike": 83,
+    "rules_primary": "If the highest temperature recorded in Central Park...",
+}
+
+
+def test_kalshi_weather_listing_strikes_and_liquidity_fallback():
+    def handler(request):
+        assert request.url.path == "/markets"
+        series = request.url.params["series_ticker"]
+        markets = [KALSHI_RAW] if series == "KXHIGHNY" else []
+        return httpx.Response(200, json={"markets": markets})
+
+    kalshi = KalshiConnector(client=mock_client(handler))
+    markets = kalshi.list_weather_markets()
+    assert len(markets) == 1
+    m = markets[0]
+    assert m.strike_type == "greater" and m.floor_strike == 83.0
+    assert m.liquidity == 17653.59  # open interest stands in for zeroed liquidity
+    assert m.category == "climate and weather"
+
+
+def test_polymarket_weather_listing_flattens_nested_events():
+    nested = {
+        "conditionId": "0xw1", "question": "Paris heat wave by July 31?",
+        "outcomes": json.dumps(["Yes", "No"]), "bestBid": 0.4, "bestAsk": 0.45,
+        "volume24hr": 15.0, "liquidityNum": 500.0, "endDate": "2026-07-31T00:00:00Z",
+        "description": "Resolves YES if...", "slug": "paris-heat-wave",
+    }
+    def handler(request):
+        assert request.url.params["tag_slug"] == "weather"
+        return httpx.Response(200, json=[{"id": 9, "title": "Paris heat", "markets": [nested]}])
+
+    poly = PolymarketConnector(client=mock_client(handler))
+    markets = poly.list_weather_markets()
+    assert len(markets) == 1
+    assert markets[0].id == "0xw1" and markets[0].category == "weather"
+    assert markets[0].event_id == "9"
+
+
+# --- desk ----------------------------------------------------------------------
+
+class StubMeteo:
+    def daily_extremes(self, station, days=7):
+        return {"2026-07-08": {"high": {"gfs_seamless": 83.3, "ecmwf_ifs025": 82.5},
+                               "low": {}}}
+
+
+class StubNWS:
+    def observed_extreme_today(self, station, kind="high"):
+        return 84.2
+
+
+class ExplodingMeteo:
+    def daily_extremes(self, station, days=7):
+        raise ConnectionError("down")
+
+
+def test_desk_brief_composes_models_and_strike():
+    desk = WeatherDesk(nws=StubNWS(), meteo=StubMeteo())
+    brief = desk.brief(mk(strike_type="greater", floor_strike=83.0))
+    assert "Central Park" in brief and "KNYC" in brief
+    assert "> 83°F" in brief
+    assert "gfs_seamless: 83.3" in brief
+    assert "Consensus: 82.9" in brief
+
+
+def test_desk_brief_empty_for_non_weather_market():
+    desk = WeatherDesk(nws=StubNWS(), meteo=StubMeteo())
+    assert desk.brief(mk(id="0x1", platform="polymarket", question="Will BTC hit 200k?")) == ""
+
+
+def test_desk_brief_empty_when_sources_dead():
+    desk = WeatherDesk(nws=StubNWS(), meteo=ExplodingMeteo())
+    # Target date is in the past relative to nothing — no models, no obs → "".
+    assert desk.brief(mk(id="KXHIGHNY-25JAN01-T50")) == ""
+
+
+def test_desk_caches_per_station_day():
+    class CountingMeteo(StubMeteo):
+        calls = 0
+        def daily_extremes(self, station, days=7):
+            CountingMeteo.calls += 1
+            return super().daily_extremes(station, days)
+
+    desk = WeatherDesk(nws=StubNWS(), meteo=CountingMeteo())
+    desk.brief(mk())
+    desk.brief(mk(id="KXHIGHNY-26JUL08-B82.5", strike_type="between",
+                  floor_strike=82.0, cap_strike=83.0))
+    assert CountingMeteo.calls == 1
+
+
+# --- forecast engine wiring -------------------------------------------------------
+
+def test_forecast_engine_injects_domain_data():
+    from openthomas.config import ModelConfig
+    from openthomas.forecast.engine import ForecastEngine
+
+    captured = {}
+
+    class SpyEngine(ForecastEngine):
+        def _complete(self, system, user):
+            captured["prompt"] = user
+            return json.dumps({"probability": 0.3, "confidence": 0.7})
+
+    engine = SpyEngine(ModelConfig(ensemble_size=1))
+    f = engine.forecast(mk(), data="Model guidance: 83.3°F")
+    assert f is not None and f.p_raw == 0.3
+    assert "Domain data" in captured["prompt"]
+    assert "Model guidance: 83.3°F" in captured["prompt"]

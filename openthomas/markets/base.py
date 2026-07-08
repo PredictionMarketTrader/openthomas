@@ -38,6 +38,11 @@ class Market:
     close_time: datetime | None = None
     resolution_rules: str = ""
     url: str = ""
+    # Scalar-market strike structure (temperature, price levels, …) where the
+    # platform provides it: YES iff value > floor / < cap / in [floor, cap].
+    strike_type: str = ""  # "greater" | "less" | "between" | ""
+    floor_strike: float | None = None
+    cap_strike: float | None = None
 
     @property
     def mid(self) -> float | None:
@@ -122,6 +127,11 @@ class MarketConnector(ABC):
     @abstractmethod
     def get_market(self, market_id: str) -> Market | None:
         """Refresh a single market's prices and metadata."""
+
+    def list_weather_markets(self, limit: int = 300) -> list[Market]:
+        """Weather markets only (the focus vertical); platforms without
+        weather coverage return nothing."""
+        return []
 
     def fee(self, price: float, qty: int, category: str = "") -> float:
         """Taker fee for `qty` contracts at `price`. Zero unless overridden."""

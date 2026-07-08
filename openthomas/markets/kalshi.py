@@ -54,11 +54,17 @@ class KalshiConnector(MarketConnector):
             yes_bid=dollars("yes_bid_dollars", "yes_bid"),
             yes_ask=dollars("yes_ask_dollars", "yes_ask"),
             volume_24h=float(m.get("volume_24h_fp") or m.get("volume_24h") or 0),
+            # Scalar series (weather, economics) report liquidity_dollars as 0
+            # since the 2026 migration; open interest is the depth proxy there.
             liquidity=float(m.get("liquidity_dollars") or 0)
-            or float(m.get("liquidity") or 0) / 100,
+            or float(m.get("liquidity") or 0) / 100
+            or float(m.get("open_interest_fp") or m.get("open_interest") or 0),
             close_time=datetime.fromisoformat(close.replace("Z", "+00:00")) if close else None,
             resolution_rules=m.get("rules_primary", ""),
             url=f"https://kalshi.com/markets/{m.get('event_ticker', m['ticker'])}",
+            strike_type=m.get("strike_type") or "",
+            floor_strike=float(m["floor_strike"]) if m.get("floor_strike") is not None else None,
+            cap_strike=float(m["cap_strike"]) if m.get("cap_strike") is not None else None,
         )
 
     def list_markets(self, limit: int = 200) -> list[Market]:
@@ -83,6 +89,22 @@ class KalshiConnector(MarketConnector):
             if not cursor or len(markets) >= limit * 3:
                 break
         markets.sort(key=lambda m: (m.volume_24h, m.liquidity), reverse=True)
+        return markets[:limit]
+
+    def list_weather_markets(self, limit: int = 300) -> list[Market]:
+        """Open markets for the temperature series in the stations registry —
+        direct per-series queries, far cheaper than paging all of /events."""
+        from ..weather.stations import weather_series
+
+        markets: list[Market] = []
+        for series in weather_series():
+            data = self.http.get(
+                "/markets", params={"series_ticker": series, "status": "open", "limit": 100}
+            ).json()
+            for raw in data.get("markets", []):
+                m = self._to_market(raw, category="climate and weather")
+                if m.yes_bid and m.yes_ask:
+                    markets.append(m)
         return markets[:limit]
 
     def get_market(self, market_id: str) -> Market | None:

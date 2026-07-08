@@ -22,6 +22,7 @@ from ..memory.journal import Journal
 from ..memory.lessons import LessonBook
 from ..research.news import NewsDesk
 from ..risk.engine import PortfolioState, RiskEngine
+from ..weather.desk import WeatherDesk
 
 
 @dataclass
@@ -55,6 +56,7 @@ class Agent:
         self._scalers: dict[str, PlattScaler] = {}
         self.forecaster = ForecastEngine(settings.forecaster, calibrate=self._calibrate)
         self.news = NewsDesk() if settings.news_enabled else None
+        self.weather = WeatherDesk()
 
     # --- calibration -----------------------------------------------------------
     def _calibrate(self, p_raw: float, category: str) -> float:
@@ -102,7 +104,10 @@ class Agent:
         markets: list[Market] = []
         for connector in self.connectors.values():
             try:
-                markets += connector.list_markets(limit=markets_per_platform)
+                if self.s.focus == "weather":
+                    markets += connector.list_weather_markets()
+                else:
+                    markets += connector.list_markets(limit=markets_per_platform)
             except Exception as e:  # a dead venue must not kill the loop
                 report.rejections.append(f"{connector.platform}: sync failed ({e})")
         report.markets_seen = len(markets)
@@ -141,7 +146,12 @@ class Agent:
                     news = self.news.brief(market.question, self.s.news_max_articles)
                 except Exception:
                     pass
-            forecast = self.forecaster.forecast(market, lessons_text, news)
+            weather_data = ""
+            try:
+                weather_data = self.weather.brief(market)
+            except Exception:
+                pass
+            forecast = self.forecaster.forecast(market, lessons_text, news, data=weather_data)
             report.forecasts += 1
             if forecast is None:
                 continue

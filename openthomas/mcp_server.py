@@ -65,7 +65,10 @@ def scan_markets(limit: int = 15) -> dict:
     errors = []
     for c in connectors.values():
         try:
-            markets += c.list_markets(limit=150)
+            if s.focus == "weather":
+                markets += c.list_weather_markets()
+            else:
+                markets += c.list_markets(limit=150)
         except Exception as e:
             errors.append(f"{c.platform}: {e}")
     result = EdgeScanner(s.risk).scan(markets)
@@ -104,6 +107,32 @@ def research_news(question: str, max_articles: int = 6) -> dict:
 
 
 @mcp.tool()
+def weather_brief(platform: str, market_id: str) -> dict:
+    """Settlement station, strike, multi-model NWP guidance, and today's
+    observed extreme for a station-temperature market. Empty brief means the
+    market isn't a weather market OpenThomas understands."""
+    from .weather import WeatherDesk, parse_strike, station_for_market, target_date
+
+    _, _, connectors = _ctx()
+    if platform not in connectors:
+        return {"error": f"unknown platform {platform!r}"}
+    m = connectors[platform].get_market(market_id)
+    if m is None:
+        return {"error": "market not found"}
+    info = station_for_market(m)
+    if info is None:
+        return {"brief": "", "station": None}
+    station, kind = info
+    strike = parse_strike(m)
+    return {
+        "brief": WeatherDesk().brief(m),
+        "station": {"obs_id": station.obs_id, "name": station.name, "kind": kind},
+        "target_date": target_date(m, station).isoformat(),
+        "yes_covers": strike.describe() if strike else None,
+    }
+
+
+@mcp.tool()
 def forecast_market(platform: str, market_id: str) -> dict:
     """Run OpenThomas's own forecast pipeline on a market: news retrieval + LLM
     ensemble + calibration. SLOW with local models (1-3 minutes). Use your own
@@ -118,7 +147,12 @@ def forecast_market(platform: str, market_id: str) -> dict:
 
     agent = Agent(s)
     news = agent.news.brief(m.question, s.news_max_articles) if agent.news else ""
-    f = agent.forecaster.forecast(m, agent.lessons.render_for_prompt(journal), news)
+    try:
+        weather_data = agent.weather.brief(m)
+    except Exception:
+        weather_data = ""
+    f = agent.forecaster.forecast(m, agent.lessons.render_for_prompt(journal), news,
+                                  data=weather_data)
     if f is None:
         return {"error": "forecast failed (all ensemble samples unparseable)"}
     journal.record_forecast(f, m)

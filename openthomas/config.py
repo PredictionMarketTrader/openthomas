@@ -82,6 +82,9 @@ class Settings(BaseModel):
     bankroll: float = 1000.0  # USD the agent may deploy; it can never exceed this
     goal: str = "Grow the bankroll steadily; protecting capital beats chasing returns."
     mode: str = "paper"  # "paper" | "live"
+    # "weather": only station-temperature and weather-tagged markets (the
+    # product focus); "all": scan every market like a generalist.
+    focus: str = "weather"
     platforms: list[str] = Field(default_factory=lambda: ["polymarket", "kalshi"])
     risk: RiskProfile = Field(default_factory=RiskProfile)
     forecaster: ModelConfig = Field(default_factory=ModelConfig)
