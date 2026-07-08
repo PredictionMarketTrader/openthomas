@@ -1,0 +1,132 @@
+"""Completion providers: one interface, four backends.
+
+- "anthropic":  Anthropic Messages API
+- "openai":     any OpenAI-compatible /chat/completions — OpenAI, OpenRouter,
+                and local vLLM / Ollama / llama.cpp servers
+- "claude-cli": Claude Code in print mode — billed to a Claude subscription
+                instead of API credits
+- "codex-cli":  OpenAI Codex in exec mode — billed to a ChatGPT subscription
+
+Every LLM node (forecaster, reflector, …) takes its own ModelConfig, so
+high-token work can run on a local server while the hardest judgments go to
+a frontier API — or everything rides an existing subscription.
+"""
+
+from __future__ import annotations
+
+import subprocess
+import tempfile
+from pathlib import Path
+
+import httpx
+
+from .config import ModelConfig
+
+
+class CompletionError(RuntimeError):
+    """A completion failed for infrastructure reasons (endpoint down, CLI
+    missing, timeout). Callers treat it like a network error: skip the sample,
+    never crash the cycle."""
+
+
+class CompletionClient:
+    def __init__(self, config: ModelConfig, http: httpx.Client | None = None,
+                 run=subprocess.run):
+        self.config = config
+        self.http = http or httpx.Client(timeout=config.timeout_s)
+        self.run = run  # injectable for tests
+
+    def complete(self, system: str, user: str) -> str:
+        c = self.config
+        if c.provider == "anthropic":
+            return self._anthropic(system, user)
+        if c.provider == "openai":
+            return self._openai(system, user)
+        if c.provider == "claude-cli":
+            return self._claude_cli(system, user)
+        if c.provider == "codex-cli":
+            return self._codex_cli(system, user)
+        raise ValueError(
+            f"unknown LLM provider {c.provider!r}; "
+            "use anthropic | openai | claude-cli | codex-cli"
+        )
+
+    # --- HTTP providers ----------------------------------------------------------
+    def _anthropic(self, system: str, user: str) -> str:
+        c = self.config
+        resp = self.http.post(
+            (c.base_url or "https://api.anthropic.com") + "/v1/messages",
+            headers={"x-api-key": c.api_key or "", "anthropic-version": "2023-06-01"},
+            json={
+                "model": c.model, "max_tokens": c.max_tokens, "temperature": c.temperature,
+                "system": system, "messages": [{"role": "user", "content": user}],
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()["content"][0]["text"]
+
+    def _openai(self, system: str, user: str) -> str:
+        resp = self.http.post(
+            (self.config.base_url or "https://api.openai.com/v1") + "/chat/completions",
+            headers={"Authorization": f"Bearer {self.config.api_key or 'local'}"},
+            json={
+                "model": self.config.model, "temperature": self.config.temperature,
+                "max_tokens": self.config.max_tokens,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                **self.config.extra_body,
+            },
+        )
+        resp.raise_for_status()
+        msg = resp.json()["choices"][0]["message"]
+        # Reasoning models (GLM, DeepSeek) may return content=null when the
+        # thinking budget runs out; surface whatever text exists, never None.
+        return msg.get("content") or msg.get("reasoning_content") or msg.get("reasoning") or ""
+
+    # --- subscription CLI providers ------------------------------------------------
+    def _run_cli(self, cmd: list[str], stdin: str) -> subprocess.CompletedProcess:
+        try:
+            proc = self.run(cmd, input=stdin, capture_output=True, text=True,
+                            timeout=self.config.timeout_s)
+        except FileNotFoundError:
+            raise CompletionError(
+                f"{cmd[0]!r} not found — install it and log in once, or switch provider"
+            ) from None
+        except subprocess.TimeoutExpired:
+            raise CompletionError(f"{cmd[0]} timed out after {self.config.timeout_s}s") from None
+        if proc.returncode != 0:
+            raise CompletionError(f"{cmd[0]} exited {proc.returncode}: {proc.stderr[:300]}")
+        return proc
+
+    def _claude_cli(self, system: str, user: str) -> str:
+        """`claude -p`: temperature/max_tokens don't apply; model may be an
+        alias like 'sonnet' or empty for the CLI's default."""
+        c = self.config
+        cmd = [c.command or "claude", "-p", "--output-format", "text",
+               "--system-prompt", system]
+        if c.model:
+            cmd += ["--model", c.model]
+        return self._run_cli(cmd, user).stdout.strip()
+
+    def _codex_cli(self, system: str, user: str) -> str:
+        """`codex exec`: no system-prompt flag, so prepend it; the final
+        answer is read from --output-last-message (stdout carries the
+        session log)."""
+        c = self.config
+        with tempfile.NamedTemporaryFile(prefix="openthomas-codex-", suffix=".txt",
+                                         delete=False) as f:
+            out_path = Path(f.name)
+        try:
+            cmd = [c.command or "codex", "exec", "--skip-git-repo-check",
+                   "-s", "read-only", "-o", str(out_path)]
+            if c.model:
+                cmd += ["-m", c.model]
+            self._run_cli(cmd, f"{system}\n\n{user}" if system else user)
+            answer = out_path.read_text().strip()
+        finally:
+            out_path.unlink(missing_ok=True)
+        if not answer:
+            raise CompletionError("codex exec produced no final message")
+        return answer

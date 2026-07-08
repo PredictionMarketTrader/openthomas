@@ -1,8 +1,7 @@
 """LLM forecast engine: ensemble probability estimates for market questions.
 
-Provider-agnostic: Anthropic API or any OpenAI-compatible endpoint (OpenAI,
-OpenRouter, and local servers — Ollama / vLLM / llama.cpp — for self-hosted
-models like Gemma-class open weights).
+Provider-agnostic via openthomas.llm — Anthropic/OpenAI-compatible APIs,
+local servers (vLLM, Ollama), or subscription CLIs (claude -p, codex exec).
 """
 
 from __future__ import annotations
@@ -16,6 +15,7 @@ from dataclasses import dataclass, field
 import httpx
 
 from ..config import ModelConfig
+from ..llm import CompletionClient, CompletionError
 from ..markets.base import Market
 
 SYSTEM = """You are the forecasting brain of OpenThomas, a disciplined prediction-market \
@@ -72,39 +72,15 @@ class ForecastEngine:
         """`calibrate`: optional fn(p_raw, category) -> p_calibrated from the journal."""
         self.config = config
         self.calibrate = calibrate or (lambda p, category: p)
-        self.http = httpx.Client(timeout=config.timeout_s)
+        self.client = CompletionClient(config)
 
-    # --- provider plumbing -----------------------------------------------------
     def _complete(self, system: str, user: str) -> str:
-        c = self.config
-        if c.provider == "anthropic":
-            resp = self.http.post(
-                (c.base_url or "https://api.anthropic.com") + "/v1/messages",
-                headers={"x-api-key": c.api_key or "", "anthropic-version": "2023-06-01"},
-                json={
-                    "model": c.model, "max_tokens": c.max_tokens, "temperature": c.temperature,
-                    "system": system, "messages": [{"role": "user", "content": user}],
-                },
-            )
-            resp.raise_for_status()
-            return resp.json()["content"][0]["text"]
-        # OpenAI-compatible (includes Ollama/vLLM local endpoints)
-        resp = self.http.post(
-            (c.base_url or "https://api.openai.com/v1") + "/chat/completions",
-            headers={"Authorization": f"Bearer {c.api_key or 'local'}"},
-            json={
-                "model": c.model, "temperature": c.temperature, "max_tokens": c.max_tokens,
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user},
-                ],
-            },
-        )
-        resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"]
+        return self.client.complete(system, user)
 
     @staticmethod
     def _parse(text: str) -> dict | None:
+        if not text:
+            return None
         match = re.search(r"\{.*\}", text, re.DOTALL)
         if not match:
             return None
@@ -137,7 +113,7 @@ class ForecastEngine:
         def one_sample(_i: int) -> dict | None:
             try:
                 return self._parse(self._complete(SYSTEM, prompt))
-            except httpx.HTTPError:
+            except (httpx.HTTPError, CompletionError):
                 return None
 
         n = max(self.config.ensemble_size, 1)

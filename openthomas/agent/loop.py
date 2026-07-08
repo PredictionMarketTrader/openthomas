@@ -14,6 +14,7 @@ from ..config import Settings
 from ..edge.scanner import EdgeScanner, ScanResult
 from ..forecast.calibration import PlattScaler
 from ..forecast.engine import ForecastEngine
+from ..llm import CompletionClient
 from ..markets.base import Action, Market, MarketConnector, Order, Side
 from ..markets.kalshi import KalshiConnector
 from ..markets.paper import InsufficientLiquidity, PaperBroker
@@ -55,6 +56,7 @@ class Agent:
         self.lessons = LessonBook(settings.lessons_dir)
         self._scalers: dict[str, PlattScaler] = {}
         self.forecaster = ForecastEngine(settings.forecaster, calibrate=self._calibrate)
+        self.reflector = CompletionClient(settings.reflector or settings.forecaster)
         self.news = NewsDesk() if settings.news_enabled else None
         self.weather = WeatherDesk()
 
@@ -213,7 +215,7 @@ class Agent:
         return report
 
     def reflect(self) -> str:
-        return self.lessons.reflect(self.journal, self.forecaster._complete)
+        return self.lessons.reflect(self.journal, self.reflector.complete)
 
     def run_forever(self, on_report=None) -> CycleReport:
         while True:

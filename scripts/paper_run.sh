@@ -5,6 +5,8 @@
 #   nohup scripts/paper_run.sh >/dev/null 2>&1 &
 #
 set -u
+# Private per-machine secrets (e.g. a local vLLM --api-key) live outside the repo.
+[ -f "$HOME/.openthomas/env" ] && . "$HOME/.openthomas/env"
 LOG="${OPENTHOMAS_LOG:-$HOME/.openthomas/agent.log}"
 mkdir -p "$(dirname "$LOG")"
 echo "[$(date -Is)] supervisor start (pid $$)" >>"$LOG"

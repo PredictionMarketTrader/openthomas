@@ -64,14 +64,18 @@ class ModelConfig(BaseModel):
     base_url to the local endpoint, e.g. http://localhost:11434/v1 for Ollama.
     """
 
-    provider: str = "anthropic"  # "anthropic" | "openai"
+    provider: str = "anthropic"  # "anthropic" | "openai" | "claude-cli" | "codex-cli"
     model: str = "claude-sonnet-5"
     base_url: str | None = None
     api_key_env: str = "ANTHROPIC_API_KEY"
+    command: str | None = None  # CLI providers: override the binary path
     ensemble_size: int = 3  # independent forecast samples aggregated per question
     temperature: float = 0.7
-    timeout_s: float = 300.0  # reasoning models on local GPUs can take minutes
+    timeout_s: float = 600.0  # reasoning models on local GPUs can take minutes
     max_tokens: int = 4096
+    # Extra JSON merged into OpenAI-compatible request bodies — e.g. vLLM's
+    # chat_template_kwargs to toggle a model's thinking mode.
+    extra_body: dict = Field(default_factory=dict)
 
     @property
     def api_key(self) -> str | None:
@@ -88,6 +92,9 @@ class Settings(BaseModel):
     platforms: list[str] = Field(default_factory=lambda: ["polymarket", "kalshi"])
     risk: RiskProfile = Field(default_factory=RiskProfile)
     forecaster: ModelConfig = Field(default_factory=ModelConfig)
+    # Lesson distillation runs high-token but low-difficulty work; point it at
+    # a cheap/local endpoint independently of the forecaster. None = same.
+    reflector: ModelConfig | None = None
     cycle_minutes: int = 30
     news_enabled: bool = True  # free keyless retrieval (GDELT + Google News RSS)
     news_max_articles: int = 6
