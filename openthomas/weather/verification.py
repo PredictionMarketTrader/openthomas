@@ -59,6 +59,29 @@ class VerificationStore:
             "target_date": target_date.isoformat(), "value": value,
         })
 
+    def keys(self) -> tuple[set, set]:
+        """(guidance keys, settlement keys) — lets bulk loaders skip
+        duplicates without O(n²) re-reads."""
+        guidance: set = set()
+        settled: set = set()
+        for r in self._rows():
+            if r["type"] == "guidance":
+                guidance.add((r["station"], r["kind"], r["target_date"], r["lead"]))
+            else:
+                settled.add((r["station"], r["kind"], r["target_date"]))
+        return guidance, settled
+
+    def guidance(self, station: str, kind: str, target_date: date,
+                 lead_days: int) -> tuple[float, float] | None:
+        """(mean, spread) recorded for one station-day at one lead, else None."""
+        want = target_date.isoformat()
+        found = None
+        for r in self._rows():
+            if (r["type"] == "guidance" and r["station"] == station and r["kind"] == kind
+                    and r["target_date"] == want and r["lead"] == lead_days):
+                found = (r["mean"], r["spread"])  # last write wins
+        return found
+
     def has_settlement(self, station: str, kind: str, target_date: date) -> bool:
         want = target_date.isoformat()
         return any(

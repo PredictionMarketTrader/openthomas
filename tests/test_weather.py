@@ -371,3 +371,53 @@ def test_engine_clamps_to_anchor():
     engine = SpyEngine(ModelConfig(ensemble_size=1))
     f = engine.forecast(mk(), anchor=(0.2, 0.15))
     assert f.p_raw == 0.35  # 0.9 clamped to baseline+delta
+
+
+# --- hindcast (④) ---------------------------------------------------------------
+
+def test_hindcast_idempotent_load(tmp_path):
+    from openthomas.weather.hindcast import Hindcast
+    from openthomas.weather.verification import VerificationStore
+
+    hours = [f"2026-07-0{d}T{h:02d}:00" for d in (1, 2) for h in range(24)]
+    def temps(base):  # peak at 15:00 local
+        return [base + (12 - abs(h - 15)) for d in range(2) for h in range(24)]
+
+    def handler(request):
+        if "previous-runs" in str(request.url):
+            return httpx.Response(200, json={"hourly": {
+                "time": hours,
+                "temperature_2m_previous_day1_gfs_seamless": temps(70),
+                "temperature_2m_previous_day1_ecmwf_ifs025": temps(72),
+            }})
+        return httpx.Response(200, json={"data": [
+            ["2026-07-01", "84", "70"], ["2026-07-02", "M", "68"],
+        ]})
+
+    store = VerificationStore(tmp_path / "v.jsonl")
+    hc = Hindcast(store, http=httpx.Client(transport=httpx.MockTransport(handler)),
+                  leads=range(1, 2))
+    g, s = hc.load_station(STATIONS["nyc"], days=2)
+    assert g == 4  # 2 days × (high, low)
+    assert s == 3  # maxt missing on day 2
+    # guidance mean: peak temp = base+12 → highs 82/84 → mean 83
+    assert store.guidance("nyc", "high", date(2026, 7, 1), 1) == (83.0, 1.41)
+    # error for verified day: 84 − 83 = +1
+    assert store.errors("nyc", "high", 1) == [1.0]
+    # idempotent: second load adds nothing
+    assert hc.load_station(STATIONS["nyc"], days=2) == (0, 0)
+
+
+def test_replay_trade_math():
+    from openthomas.weather.replay import ReplayTrade, summarize
+    from openthomas.markets.base import Side
+
+    trades = [
+        ReplayTrade("T1", "nyc", Side.YES, price=0.40, fee=0.02, p=0.60,
+                    outcome_win=True, pnl=1 - 0.40 - 0.02),
+        ReplayTrade("T2", "nyc", Side.NO, price=0.55, fee=0.02, p=0.60,
+                    outcome_win=False, pnl=-0.55 - 0.02),
+    ]
+    s = summarize(trades)
+    assert s["n"] == 2 and s["win_rate"] == 0.5
+    assert abs(s["total_pnl"] - (0.58 - 0.57)) < 1e-9

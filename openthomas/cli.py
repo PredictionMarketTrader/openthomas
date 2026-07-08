@@ -169,6 +169,75 @@ def vital(out: str = typer.Option("vital.html", help="output HTML file")):
 
 
 @app.command()
+def hindcast(days: int = typer.Option(90, help="days of history to load (max 92)")):
+    """Bulk-load leak-free forecast history so the baseline learns station
+    bias/sigma immediately instead of over weeks of live settlements."""
+    from .weather.hindcast import Hindcast
+    from .weather.stations import KALSHI_SERIES, STATIONS
+    from .weather.verification import VerificationStore
+
+    s = Settings.load()
+    store = VerificationStore(s.home / "weather-verification.jsonl")
+    hc = Hindcast(store)
+    stations = sorted({key for key, _ in KALSHI_SERIES.values()})
+    for key in stations:
+        station = STATIONS[key]
+        try:
+            g, st = hc.load_station(station, days)
+            console.print(f"[green]✓[/green] {station.obs_id}: +{g} guidance, +{st} settlements")
+        except Exception as e:
+            console.print(f"[red]✗[/red] {station.obs_id}: {e}")
+
+    table = Table(title="Baseline verification stats (bias / sigma / n)")
+    table.add_column("station")
+    for lead in range(1, 6):
+        table.add_column(f"high L{lead}")
+    for key in stations:
+        row = [STATIONS[key].obs_id]
+        for lead in range(1, 6):
+            bias, sigma, n = store.stats(key, "high", lead)
+            row.append(f"{bias:+.1f}/{sigma:.1f}/n={n}")
+        table.add_row(*row)
+    console.print(table)
+
+
+@app.command()
+def replay(
+    days: int = typer.Option(21, help="settled days to replay"),
+    min_edge: float = typer.Option(0.08, help="required edge after fees"),
+):
+    """Replay settled temperature markets against the statistical baseline
+    alone (no LLM, no intraday obs) — a conservative expectancy bound."""
+    from .weather.replay import replay_all, summarize
+    from .weather.verification import VerificationStore
+
+    s = Settings.load()
+    store = VerificationStore(s.home / "weather-verification.jsonl")
+    by_series = replay_all(store, days=days, min_edge=min_edge)
+
+    table = Table(title=f"Baseline-only replay · last {days}d · min_edge={min_edge:.02f}")
+    for col in ("series", "trades", "win rate", "pnl/contract", "total"):
+        table.add_column(col)
+    all_trades = []
+    for series, trades in sorted(by_series.items()):
+        all_trades += trades
+        s_ = summarize(trades)
+        if s_["n"]:
+            table.add_row(series, str(s_["n"]), f"{s_['win_rate']:.0%}",
+                          f"${s_['pnl_per_contract']:+.3f}", f"${s_['total_pnl']:+.2f}")
+    total = summarize(all_trades)
+    if total["n"]:
+        table.add_row("[bold]ALL[/bold]", str(total["n"]), f"{total['win_rate']:.0%}",
+                      f"${total['pnl_per_contract']:+.3f}", f"${total['total_pnl']:+.2f}")
+        console.print(table)
+        console.print(f"Priced edge kept after settlement: "
+                      f"{total['pnl_per_contract'] / max(total['avg_edge_priced'], 1e-9):.0%} "
+                      f"of the {total['avg_edge_priced']:.03f} average modeled edge.")
+    else:
+        console.print("No replay trades cleared the edge bar — run `openthomas hindcast` first?")
+
+
+@app.command()
 def version():
     console.print(f"openthomas {__version__}")
 
