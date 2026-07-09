@@ -13,6 +13,11 @@ WORK="$NWP_HOME/runs/$(date -u +%Y%m%dT%H%M)"
 mkdir -p "$WORK"
 cd "$WORK"
 
+# The vLLM server owns all GPU memory; onnxruntime-gpu grabs CUDA by default
+# and dies on a 64MB allocation. Force CPU until VRAM is freed — then delete
+# this line and inference drops from ~1h to ~2min.
+export CUDA_VISIBLE_DEVICES=""
+
 echo "[$(date -Is)] pangu run starting in $WORK"
 "$VENV/bin/ai-models" --input ecmwf-open-data \
   --assets "$NWP_HOME/assets" --download-assets \
