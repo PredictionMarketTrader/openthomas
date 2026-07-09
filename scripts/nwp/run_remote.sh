@@ -9,6 +9,9 @@
 set -euo pipefail
 
 HOST="${1:-gpu-host2}"
+MODE="${2:-}"  # empty = CPU (Pangu fp32 needs >24GB VRAM under ORT; verified
+               # the hard way — four configurations, four OOMs); "--gpu" for
+               # boxes with room.
 OUT="$HOME/.openthomas/local-models.jsonl"
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 
@@ -26,8 +29,8 @@ echo "[$(date -Is)] remote pangu run on $HOST"
 # The GPU box has no clean route to ECMWF — reverse-SOCKS the downloads
 # through this box (needs pysocks in the remote venv; OpenSSH ≥7.6).
 ssh -R 18080 -o ExitOnForwardFailure=yes "$HOST" \
-  'cd ~/openthomas && ALL_PROXY=socks5h://127.0.0.1:18080 HTTPS_PROXY=socks5h://127.0.0.1:18080 \
-   bash scripts/nwp/run_pangu.sh --gpu'
+  "cd ~/openthomas && ALL_PROXY=socks5h://127.0.0.1:18080 HTTPS_PROXY=socks5h://127.0.0.1:18080 \
+   bash scripts/nwp/run_pangu.sh $MODE"
 
 RUN=$(ssh "$HOST" 'ls -dt ~/.openthomas/nwp/runs/* | head -1')
 mkdir -p "$(dirname "$OUT")"
