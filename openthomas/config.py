@@ -99,6 +99,10 @@ class Settings(BaseModel):
     # How far the LLM may move a weather market's statistical baseline: the
     # blend thesis again — the model adjusts the statistics, never replaces them.
     weather_anchor_delta: float = 0.15
+    # Forecast prompt template override. None = the built-in default
+    # (forecast/engine.py PROMPT). Set by the self-improvement loop when an
+    # evolved template clears the kernel gate; hand-editing works too.
+    forecast_prompt: str | None = None
     news_enabled: bool = True  # free keyless retrieval (GDELT + Google News RSS)
     news_max_articles: int = 6
     home: Path = HOME

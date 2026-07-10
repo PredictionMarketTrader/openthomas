@@ -26,6 +26,32 @@ from .strikes import Strike, parse_strike
 from .verification import VerificationStore
 
 
+# Shared prompt prose, used by the live desk AND the LLM-in-replay evaluator
+# (improve/forecast_replay.py). One source: replayed prompts must read exactly
+# like live ones, or evolved templates get scored against a fiction and the
+# drift is silent.
+
+def settles_line(station: Station, kind: str, day: str) -> str:
+    return (f"Market settles on the official NWS {kind} temperature at "
+            f"{station.name} ({station.obs_id}) on {day}.")
+
+
+def strike_line(kind: str, strike_desc: str) -> str:
+    return f"YES resolves if the official {kind} is {strike_desc}."
+
+
+def baseline_line(p_base: float, mean: float, bias: float, sigma: float,
+                  n: int | None = None, with_obs: bool = True) -> str:
+    detail = f"consensus {mean:.1f}°F, station bias {bias:+.1f}, sigma {sigma:.1f}"
+    if n is not None:
+        detail += f", {n} verified settlements"
+    prices = ("the model consensus and today's observations" if with_obs
+              else "the model consensus")
+    return (f"Statistical baseline: P(YES) = {p_base:.2f} ({detail}). "
+            f"This baseline already prices {prices}. Deviate only for "
+            "information it cannot see, and name that information.")
+
+
 @dataclass
 class WeatherAssessment:
     station: Station
@@ -153,12 +179,9 @@ class WeatherDesk:
                 observed, p_base) -> str:
         if not by_model and observed is None:
             return ""
-        lines = [
-            f"Market settles on the official NWS {kind} temperature at "
-            f"{station.name} ({station.obs_id}) on {day.isoformat()}."
-        ]
+        lines = [settles_line(station, kind, day.isoformat())]
         if strike:
-            lines.append(f"YES resolves if the official {kind} is {strike.describe()}.")
+            lines.append(strike_line(kind, strike.describe()))
         if by_model:
             lines.append(f"Model guidance for the {kind} on {day.isoformat()} "
                          "(independent NWP models, °F):")
@@ -170,13 +193,7 @@ class WeatherDesk:
             lines.append(f"Observed {kind} so far today at {station.obs_id}: {observed:.1f}°F "
                          f"— the official {kind} can only end {bound}.")
         if p_base is not None:
-            lines.append(
-                f"Statistical baseline: P(YES) = {p_base:.2f} "
-                f"(consensus {mean:.1f}°F, station bias {bias:+.1f}, sigma {sigma:.1f}, "
-                f"{n} verified settlements). This baseline already prices the model "
-                "consensus and today's observations. Deviate only for information it "
-                "cannot see, and name that information."
-            )
+            lines.append(baseline_line(p_base, mean, bias, sigma, n=n))
         discussion = self._discussion(station)
         if discussion:
             lines.append(

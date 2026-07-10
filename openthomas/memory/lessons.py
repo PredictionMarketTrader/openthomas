@@ -13,7 +13,6 @@ Two layers:
 from __future__ import annotations
 
 import json
-import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -123,14 +122,10 @@ class LessonBook:
 
     @staticmethod
     def _parse_ops(text: str) -> list[dict]:
-        match = re.search(r"\{.*\}", text or "", re.DOTALL)
-        if not match:
-            return []
-        try:
-            ops = json.loads(match.group()).get("ops", [])
-            return ops if isinstance(ops, list) else []
-        except (json.JSONDecodeError, AttributeError):
-            return []
+        from ..llm import extract_json
+        data = extract_json(text)
+        ops = (data or {}).get("ops", [])
+        return ops if isinstance(ops, list) else []
 
     def apply_ops(self, ops: list[dict]) -> list[str]:
         """Validate and apply curator operations; returns an audit trail."""

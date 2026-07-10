@@ -7,6 +7,7 @@ lacked. Every step logs to the journal; every decision carries its reason.
 from __future__ import annotations
 
 import random
+import threading
 import time
 from dataclasses import dataclass, field
 
@@ -21,6 +22,7 @@ from ..markets.paper import InsufficientLiquidity, PaperBroker
 from ..markets.polymarket import PolymarketConnector
 from ..memory.journal import Journal
 from ..memory.lessons import LessonBook
+from ..memory.usage import UsageLedger
 from ..research.news import NewsDesk
 from ..risk.engine import PortfolioState, RiskEngine
 from ..weather.desk import WeatherDesk
@@ -56,8 +58,13 @@ class Agent:
         self.risk = RiskEngine(settings.risk)
         self.lessons = LessonBook(settings.lessons_dir)
         self._scalers: dict[str, PlattScaler] = {}
-        self.forecaster = ForecastEngine(settings.forecaster, calibrate=self._calibrate)
-        self.reflector = CompletionClient(settings.reflector or settings.forecaster)
+        self._improving: threading.Thread | None = None
+        self.usage = UsageLedger(settings.home)
+        self.forecaster = ForecastEngine(settings.forecaster, calibrate=self._calibrate,
+                                         prompt_fn=lambda: settings.forecast_prompt,
+                                         usage_sink=self.usage.record)
+        self.reflector = CompletionClient(settings.reflector or settings.forecaster,
+                                          usage_sink=self.usage.record, node="reflect")
         self.news = NewsDesk() if settings.news_enabled else None
         from ..weather.localmodels import LocalModelSource
         self.weather = WeatherDesk(
@@ -152,6 +159,7 @@ class Agent:
                 continue
 
             assessment = None
+            news = ""
             try:
                 assessment = self.weather.assess(market)
             except Exception:
@@ -169,7 +177,6 @@ class Agent:
                     model="baseline-observation",
                 )
             else:
-                news = ""
                 if self.news:
                     try:
                         news = self.news.brief(market.question, self.s.news_max_articles)
@@ -185,7 +192,9 @@ class Agent:
             report.forecasts += 1
             if forecast is None:
                 continue
-            self.journal.record_forecast(forecast, market)
+            self.journal.record_forecast(forecast, market,
+                                         data=assessment.text if assessment else "",
+                                         news=news)
 
             if forecast.confidence < self.s.risk.min_confidence:
                 report.rejections.append(f"{market.question[:50]}: confidence {forecast.confidence:.2f} too low")
@@ -245,16 +254,49 @@ class Agent:
     def reflect(self) -> str:
         return self.lessons.reflect(self.journal, self.reflector.complete)
 
-    def improve(self):
-        """One evolution meta-cycle (docs/RSI.md). Mutates settings in place,
-        so promoted parameters take effect from the next trading cycle."""
+    def improve(self, operator: str = "decision"):
+        """One evolution meta-cycle (docs/RSI.md), synchronously. Mutates
+        settings in place, so promoted parameters take effect from the next
+        trading cycle.
+
+        The Improver opens its own journal and model client rather than
+        borrowing the trading loop's: this runs on the improvement worker
+        thread, and a sqlite connection belongs to the thread that opened it.
+        """
         from ..improve.loop import Improver
-        return Improver(self.s, journal=self.journal,
-                        complete_fn=self.reflector.complete).meta_cycle()
+        return Improver(self.s).meta_cycle(operator=operator)
+
+    def _improve_worker(self, operators: list[str]) -> None:
+        for operator in operators:
+            try:
+                self.improve(operator)
+            except Exception:
+                pass  # the slow loop must never take down the fast loop
+
+    def _start_improvements(self) -> None:
+        """Kick off any due meta-cycles on a background worker.
+
+        The forecast operator pays a model call per sampled row — on a local
+        reasoning model that is hours of wall clock, not seconds. Run inline it
+        would stall the trading loop for a dozen cycles, leaving open positions
+        unmarked and the drawdown kill-switch unevaluated the whole time. The
+        slow loop must never make the fast loop wait (docs/RSI.md), so it
+        doesn't: the fast loop only ever starts it and walks away.
+        """
+        from ..improve.loop import OPERATORS, improve_due
+
+        if self._improving is not None and self._improving.is_alive():
+            return  # one meta-cycle at a time; the rest wait for a later settlement
+        due = [op for op in OPERATORS if improve_due(self.journal, op)]
+        if not due:
+            return
+        self._improving = threading.Thread(
+            target=self._improve_worker, args=(due,),
+            name="openthomas-improve", daemon=True,
+        )
+        self._improving.start()
 
     def run_forever(self, on_report=None) -> CycleReport:
-        from ..improve.loop import improve_due
-
         while True:
             report = self.cycle()
             if on_report:
@@ -264,9 +306,8 @@ class Agent:
                     self.reflect()
                 except Exception:
                     pass
-                try:  # the slow loop must never take down the fast loop
-                    if improve_due(self.journal):
-                        self.improve()
+                try:
+                    self._start_improvements()  # decision daily-ish, forecast weekly-ish
                 except Exception:
                     pass
             if report.halted:

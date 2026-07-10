@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Callable
 
+from ..forecast.calibration import brier_score
 from ..weather.replay import ReplayRow, ReplayTrade, summarize
 
 Strategy = Callable[[list[ReplayRow]], list[ReplayTrade]]
@@ -34,6 +35,13 @@ MIN_HELD_IN_TRADES = 20  # below this, any win is indistinguishable from luck
 PROMOTION_MARGIN = 0.50  # $ of held-in total PnL the challenger must ADD
 HELD_OUT_TOLERANCE = 0.25  # $ of held-out total PnL the challenger may give up
 ROLLBACK_MARGIN = 0.50  # $ by which the parent must beat the active gen to revert
+
+# LLM-in-replay (forecast-stage) evaluation: each row costs a local-model
+# call, so the gate fixes the evaluation sample — deterministically, so every
+# candidate faces the same markets and cached outputs stay valid.
+MAX_FORECAST_ROWS_IN = 120
+MAX_FORECAST_ROWS_OUT = 60
+BRIER_TOLERANCE = 0.01  # forecast candidates may not worsen calibration past this
 
 
 @dataclass
@@ -50,9 +58,20 @@ class Score:
     def pnl_out(self) -> float:
         return self.held_out.get("total_pnl", 0.0)
 
+    @property
+    def brier(self) -> float | None:
+        """Pooled Brier over both windows (forecast-stage scores only)."""
+        parts = [(w["brier"], w["n_pairs"]) for w in (self.held_in, self.held_out)
+                 if w.get("brier") is not None and w.get("n_pairs")]
+        total = sum(n for _, n in parts)
+        if not total:
+            return None
+        return sum(b * n for b, n in parts) / total
+
     def as_dict(self) -> dict:
-        return {"params": self.params, "held_in": self.held_in,
-                "held_out": self.held_out}
+        # No params here: the Generation already records them, and repeating
+        # a multi-KB prompt template in every score bloats the lineage file.
+        return {"held_in": self.held_in, "held_out": self.held_out}
 
 
 def split_rows(rows: list[ReplayRow],
@@ -68,6 +87,17 @@ def split_rows(rows: list[ReplayRow],
             [r for r in rows if r.day > cutoff])
 
 
+def sample_rows(rows: list[ReplayRow], cap: int) -> list[ReplayRow]:
+    """Deterministic, evenly-strided subsample. Every candidate must face the
+    same markets — a random sample would let luck of the draw pick winners
+    and would invalidate cached model outputs between meta-cycles."""
+    ordered = sorted(rows, key=lambda r: (r.day, r.ticker))
+    if len(ordered) <= cap:
+        return ordered
+    stride = len(ordered) / cap
+    return [ordered[int(i * stride)] for i in range(cap)]
+
+
 def score(rows_in: list[ReplayRow], rows_out: list[ReplayRow],
           params: dict, strategy: Strategy) -> Score:
     """Run the candidate strategy over both windows; truth math stays here."""
@@ -76,6 +106,27 @@ def score(rows_in: list[ReplayRow], rows_out: list[ReplayRow],
         held_in=summarize(strategy(rows_in)),
         held_out=summarize(strategy(rows_out)),
     )
+
+
+def score_forecast(rows_in: list[ReplayRow], rows_out: list[ReplayRow],
+                   params: dict, forecast_strategy) -> Score:
+    """Score a forecast-stage candidate (prompt template, anchor delta).
+
+    `forecast_strategy(rows) -> (trades, pairs)` where pairs are
+    (p_forecast, outcome) for Brier — the candidate's probabilities BEFORE
+    the market blend, so this measures forecaster skill, not the crowd's.
+    The strategy is agent-plane (it mirrors the live pipeline); the sample,
+    the PnL math, and the Brier math stay here.
+    """
+    sc = Score(params=dict(params))
+    for window, rows, cap in (("held_in", rows_in, MAX_FORECAST_ROWS_IN),
+                              ("held_out", rows_out, MAX_FORECAST_ROWS_OUT)):
+        trades, pairs = forecast_strategy(sample_rows(rows, cap))
+        stats = summarize(trades)
+        stats["n_pairs"] = len(pairs)
+        stats["brier"] = brier_score(pairs) if pairs else None
+        setattr(sc, window, stats)
+    return sc
 
 
 def beats(challenger: Score, champion: Score) -> tuple[bool, str]:
@@ -92,6 +143,22 @@ def beats(challenger: Score, champion: Score) -> tuple[bool, str]:
     return True, (f"held-in ${challenger.pnl_in:+.2f} vs ${champion.pnl_in:+.2f} "
                   f"(+${gain:.2f}), held-out ${challenger.pnl_out:+.2f} "
                   f"vs ${champion.pnl_out:+.2f}")
+
+
+def beats_forecast(challenger: Score, champion: Score) -> tuple[bool, str]:
+    """Promotion rule for forecast-stage candidates: the decision-rule test
+    plus a calibration veto — a prompt that wins PnL while worsening Brier
+    got lucky on this sample, and luck does not promote."""
+    ok, why = beats(challenger, champion)
+    if not ok:
+        return ok, why
+    if challenger.brier is not None and champion.brier is not None:
+        drift = challenger.brier - champion.brier
+        if drift > BRIER_TOLERANCE:
+            return False, (f"Brier worsens {champion.brier:.4f} → "
+                           f"{challenger.brier:.4f} (+{drift:.4f} > {BRIER_TOLERANCE})")
+        why += f", Brier {champion.brier:.4f} → {challenger.brier:.4f}"
+    return True, why
 
 
 def should_rollback(active: Score, parent: Score) -> tuple[bool, str]:

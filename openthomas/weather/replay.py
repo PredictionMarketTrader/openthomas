@@ -46,7 +46,12 @@ REPLAY_LEAD = 1  # freshest guidance that is certainly pre-snapshot
 
 @dataclass
 class ReplayRow:
-    """Decision-rule-independent facts about one settled market."""
+    """Decision-rule-independent facts about one settled market.
+
+    The trailing fields carry everything the LLM-in-replay evaluator needs to
+    rebuild the forecast prompt as-of decision time (docs/RSI.md) — guidance
+    consensus and station stats, never the outcome.
+    """
 
     ticker: str
     station: str
@@ -56,6 +61,12 @@ class ReplayRow:
     yes_bid: float
     yes_ask: float
     outcome_yes: bool
+    question: str = ""
+    strike_desc: str = ""
+    mean: float | None = None  # guidance consensus, °F
+    spread: float = 0.0
+    bias: float = 0.0
+    sigma: float = 0.0
 
 
 @dataclass
@@ -112,34 +123,39 @@ def collect_rows(kalshi: KalshiConnector, store: VerificationStore, series: str,
 
     rows: list[ReplayRow] = []
     for raw in data.get("markets", []):
-        if raw.get("result") not in ("yes", "no"):
-            continue
-        market: Market = kalshi._to_market(raw)
-        strike = parse_strike(market)
-        parts = market.id.split("-")
-        if strike is None or len(parts) < 3:
-            continue
         try:
-            day = datetime.strptime(parts[1], "%y%b%d")
-        except ValueError:
-            continue
+            if raw.get("result") not in ("yes", "no"):
+                continue
+            market: Market = kalshi._to_market(raw)
+            strike = parse_strike(market)
+            parts = market.id.split("-")
+            if strike is None or len(parts) < 3:
+                continue
+            try:
+                day = datetime.strptime(parts[1], "%y%b%d")
+            except ValueError:
+                continue
 
-        guidance = store.guidance(station.key, kind, day.date(), REPLAY_LEAD)
-        if guidance is None:
-            continue
-        mean, spread = guidance
-        sigma = max(sigma_stat, 0.8 * spread)
-        p_model = strike_probability(strike, mean + bias, sigma, kind)
+            guidance = store.guidance(station.key, kind, day.date(), REPLAY_LEAD)
+            if guidance is None:
+                continue
+            mean, spread = guidance
+            sigma = max(sigma_stat, 0.8 * spread)
+            p_model = strike_probability(strike, mean + bias, sigma, kind)
 
-        quotes = _snapshot_quotes(kalshi, series, market.id, day, kind)
-        if quotes is None:
+            quotes = _snapshot_quotes(kalshi, series, market.id, day, kind)
+            if quotes is None:
+                continue
+            bid, ask = quotes
+            rows.append(ReplayRow(
+                ticker=market.id, station=station.key, kind=kind,
+                day=day.date().isoformat(), p_model=p_model,
+                yes_bid=bid, yes_ask=ask, outcome_yes=raw["result"] == "yes",
+                question=market.question, strike_desc=strike.describe(),
+                mean=mean, spread=spread, bias=bias, sigma=sigma,
+            ))
+        except Exception:  # one bad candle fetch must not kill the meta-cycle
             continue
-        bid, ask = quotes
-        rows.append(ReplayRow(
-            ticker=market.id, station=station.key, kind=kind,
-            day=day.date().isoformat(), p_model=p_model,
-            yes_bid=bid, yes_ask=ask, outcome_yes=raw["result"] == "yes",
-        ))
     return rows
 
 
@@ -179,7 +195,10 @@ def collect_all(store: VerificationStore, days: int = 30) -> list[ReplayRow]:
     kalshi = KalshiConnector()
     rows: list[ReplayRow] = []
     for series, (station_key, kind) in KALSHI_SERIES.items():
-        rows += collect_rows(kalshi, store, series, STATIONS[station_key], kind, days)
+        try:
+            rows += collect_rows(kalshi, store, series, STATIONS[station_key], kind, days)
+        except Exception:  # a dead series must not sink the others
+            continue
     return rows
 
 

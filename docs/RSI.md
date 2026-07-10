@@ -22,8 +22,15 @@ model:
 
 | Plane | Contents | Who writes it |
 |---|---|---|
-| **kernel** | `openthomas/kernel/` (bounds, promotion gate), `openthomas/risk/`, the truth pipeline (`weather/verification.py`, `weather/replay.py::collect_rows`), the journal schema | The operator only. The evolution loop has **no write path** here. |
-| **agent** | Decision-rule parameters (today), prompts, workflow structure, strategy code, the evolver itself (roadmap) | The evolution loop, through the kernel gate. |
+| **kernel** | `openthomas/kernel/` (bounds, promotion gate), the risk engine code and all safety rails (sizing, exposure caps, kill-switch), the truth pipeline (`weather/verification.py`, `weather/replay.py::collect_rows`), the journal schema | The operator only. The evolution loop has **no write path** here. |
+| **agent** | Decision-rule parameters and the forecast prompt template (today), workflow structure, strategy code, the evolver itself (roadmap) | The evolution loop, through the kernel gate. |
+
+One line needs drawing precisely: `risk.min_edge` and `risk.market_prior_weight`
+live on the RiskProfile config object but are entry-*selectivity* knobs — how
+picky to be, not how much to risk. They are genome parameters under kernel
+bounds. Sizing, exposure caps, and the kill-switch are safety rails and can
+never enter `PARAM_SPACE`; a kernel policy test
+(`test_param_space_never_touches_safety_rails`) fails any change that tries.
 
 The agent plane can change everything about *how*; it can never change *what
 counts as good*. An optimizer that can edit its own judge will find it easier
@@ -47,8 +54,9 @@ commit authored by the loop itself — auditable by construction.
 2. **Reflection loop** (on settlements, `memory/lessons.py`): distills
    settled trades into playbook rules — content-level improvement, already
    bounded (ops, caps, per-rule track records).
-3. **Evolution loop** (daily-ish, `improve/loop.py`): the harness improving
-   the harness:
+3. **Evolution loop** (`improve/loop.py`): the harness improving the
+   harness — the decision operator daily-ish, the forecast operator
+   weekly-ish (its scoring pays a model call per sampled market):
 
 ```
 mine failure evidence      journal stats, losing settlements
@@ -98,8 +106,9 @@ mutation operators feeding the *same* accept mechanism:
 |---|---|---|
 | Playbook ops | lesson rules injected into prompts | shipped (`memory/lessons.py`) |
 | Calibration refit | Platt parameters per category | shipped (`forecast/calibration.py`) |
-| **Parameter mutation** | `PARAM_SPACE`: min_edge, market-prior blend | **shipped (`improve/`)** |
-| Prompt / workflow-config mutation | forecast prompt variants, scanner filter config, cycle structure as data | next: requires the gate to run an LLM-in-the-loop replay (local endpoint) |
+| **Decision mutation** | `PARAM_SPACE` decision tags: min_edge, market-prior blend | **shipped (`improve/`)**, daily-ish |
+| **Forecast mutation** | the forecast prompt template + anchor delta, scored by LLM-in-replay | **shipped (`improve/forecast_replay.py`)**, weekly-ish |
+| Workflow-structure mutation | cycle structure as data, scanner filter config | next |
 | Code diffs | agent-plane source, including the evolver itself | later: adds shadow paper-trading vs champion + operator review of the diff before merge |
 | Weight updates | LoRA/GRPO on journal outcomes, time-discounted reward `R·exp(-λ·days_to_close)` | later: a trained adapter is just another candidate at the gate (`docs/TRAINING.md`) |
 
@@ -109,6 +118,51 @@ improvement — that rule decides what enters `PARAM_SPACE`, in which order
 the operators ship, and why code diffs come last (they need the strongest
 evaluation: replay *plus* shadow trading *plus* human review of the diff,
 with the review moving up-stack over time, not disappearing).
+
+### The forecast operator (LLM-in-replay)
+
+The prompt template is a genome parameter like any other. A generation
+stores concrete template text only when its operator actually evolved it;
+an unevolved slot stays None — "track the built-in default" — so upstream
+fixes to the stock template keep reaching deployments instead of being
+frozen by whichever generation happened to be promoted last. Structure is
+kernel policy (`TextSpec`: required placeholders whitelisted by a format
+parse — which also closes the `{question.__class__}`-style str.format
+injection channel — the `"probability"` parser contract, length cap);
+content is evolved. Scoring rebuilds each settled
+market's prompt from as-of archived data (guidance consensus, station stats,
+snapshot quotes — never the outcome), gets the model's probability at
+temperature 0, applies the live anchor clip, and pushes it through the
+champion's decision rule frozen — so the gate's verdict attributes wins to
+the mutation and nothing else. Promotion additionally requires calibration
+not to degrade (`beats_forecast`: Brier veto) — a prompt that wins PnL while
+worsening Brier got lucky, and luck does not promote.
+
+A cold forecast meta-cycle is ~500 local-model calls — hours of wall clock,
+not seconds. It therefore runs on a background worker: the trading loop only
+ever starts it and walks away, because a fast loop that waits on the slow
+loop leaves open positions unmarked and the drawdown kill-switch unevaluated
+for a dozen cycles. One meta-cycle runs at a time, it opens its own journal
+(a sqlite connection belongs to the thread that opened it), and promotion
+mutates the live `Settings` in place, so the next trading cycle picks it up.
+
+Every candidate faces the same kernel-sampled rows, and model outputs are
+cached by (template, model, market): anchor-delta-only mutations re-score
+from cache with zero model calls, and repeated meta-cycles only pay for
+newly settled days. Mutations are restricted to the invoking operator's
+tags — a decision cycle can never smuggle in an unscored prompt change, and
+vice versa; adjacent generations therefore differ only in one operator's
+parameters, which is what makes the rollback check a controlled comparison.
+
+Known fidelity limits, accepted rather than hidden: replay has no news
+brief, no intraday observations, no NWS discussion, and no calibration
+layer — it measures the template's skill at adjusting the statistical
+baseline, the dominant live pathway for weather markets. (The journal now
+archives each live forecast's data/news inputs, so a future trace-replay
+evaluator can close this gap for generic markets.) Residual leak risk: a
+model could in principle "remember" recent weather from training data — with
+a local model whose cutoff precedes the replay window this is negligible,
+but swap the forecaster and the assumption must be rechecked.
 
 ## Failure modes and their counters
 

@@ -47,10 +47,14 @@ class Journal:
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA busy_timeout=5000")
         self.db.executescript(SCHEMA)
-        try:  # v0.2: market price at forecast time — the baseline Brier to beat
-            self.db.execute("ALTER TABLE forecasts ADD COLUMN mid REAL")
-        except sqlite3.OperationalError:
-            pass  # column already present
+        for column in ("mid REAL",  # v0.2: market price at forecast time
+                       # v0.3: the prompt inputs as-of decision time, so future
+                       # prompt templates can be re-scored on real traces
+                       "data_text TEXT", "news_text TEXT"):
+            try:
+                self.db.execute(f"ALTER TABLE forecasts ADD COLUMN {column}")
+            except sqlite3.OperationalError:
+                pass  # column already present
 
     # --- writes ---------------------------------------------------------------
     def record_fill(self, fill: Fill, market: Market) -> None:
@@ -63,14 +67,15 @@ class Journal:
         )
         self.db.commit()
 
-    def record_forecast(self, f, market: Market) -> None:
+    def record_forecast(self, f, market: Market, data: str = "", news: str = "") -> None:
         self.db.execute(
             "INSERT INTO forecasts (ts, market_id, platform, question, category, p_raw,"
             " p_calibrated, confidence, base_rate, market_gap_reason, invalidation,"
-            " reasoning, model, mid) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            " reasoning, model, mid, data_text, news_text)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (_now(), f.market_id, market.platform, market.question, market.category,
              f.p_raw, f.p_calibrated, f.confidence, f.base_rate, f.market_gap_reason,
-             f.invalidation, f.reasoning, f.model, market.mid),
+             f.invalidation, f.reasoning, f.model, market.mid, data, news),
         )
         self.db.commit()
 
@@ -192,6 +197,33 @@ class Journal:
             "SELECT * FROM settlements ORDER BY ts DESC LIMIT ?", (limit,)
         ).fetchall()
         return [dict(r) for r in rows]
+
+    def recent_trades(self, limit: int = 20) -> list[dict]:
+        rows = self.db.execute(
+            "SELECT * FROM trades ORDER BY ts DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def recent_forecasts(self, limit: int = 40) -> list[dict]:
+        """Latest forecast per market, newest first — one row per market, so a
+        market re-forecast every cycle doesn't crowd out the rest."""
+        rows = self.db.execute(
+            """SELECT * FROM forecasts WHERE id IN (
+                 SELECT MAX(id) FROM forecasts GROUP BY market_id)
+               ORDER BY ts DESC LIMIT ?""", (limit,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def forecast_count(self) -> int:
+        return self.db.execute("SELECT COUNT(*) AS n FROM forecasts").fetchone()["n"]
+
+    def traded_market_ids(self) -> set[str]:
+        rows = self.db.execute("SELECT DISTINCT market_id FROM trades").fetchall()
+        return {r["market_id"] for r in rows}
+
+    def settled_market_ids(self) -> set[str]:
+        rows = self.db.execute("SELECT market_id FROM settlements").fetchall()
+        return {r["market_id"] for r in rows}
 
     def has_recent_forecast(self, market_id: str, hours: float = 12) -> bool:
         row = self.db.execute(

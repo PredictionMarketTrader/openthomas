@@ -14,6 +14,8 @@ a frontier API — or everything rides an existing subscription.
 
 from __future__ import annotations
 
+import json
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -21,6 +23,21 @@ from pathlib import Path
 import httpx
 
 from .config import ModelConfig
+from .memory.usage import Usage, now
+
+
+def extract_json(text: str) -> dict | None:
+    """First {...} blob in LLM output, parsed; None if absent or invalid.
+    The one JSON-from-model-text extractor — forecaster, lesson curator, and
+    evolution proposer must all parse replies the same way."""
+    match = re.search(r"\{.*\}", text or "", re.DOTALL)
+    if not match:
+        return None
+    try:
+        data = json.loads(match.group())
+    except json.JSONDecodeError:
+        return None
+    return data if isinstance(data, dict) else None
 
 
 class CompletionError(RuntimeError):
@@ -31,10 +48,23 @@ class CompletionError(RuntimeError):
 
 class CompletionClient:
     def __init__(self, config: ModelConfig, http: httpx.Client | None = None,
-                 run=subprocess.run):
+                 run=subprocess.run, usage_sink=None, node: str = ""):
+        """`usage_sink`: optional fn(Usage) -> None, called once per completion.
+        `node` labels the caller in that ledger (forecast | reflect | …)."""
         self.config = config
         self.http = http or httpx.Client(timeout=config.timeout_s)
         self.run = run  # injectable for tests
+        self.usage_sink = usage_sink
+        self.node = node
+
+    def _record(self, prompt_tokens=None, completion_tokens=None, cached_tokens=None) -> None:
+        if self.usage_sink is None:
+            return
+        self.usage_sink(Usage(
+            ts=now(), node=self.node, provider=self.config.provider,
+            model=self.config.model, prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens, cached_tokens=cached_tokens,
+        ))
 
     def complete(self, system: str, user: str) -> str:
         c = self.config
@@ -63,7 +93,11 @@ class CompletionClient:
             },
         )
         resp.raise_for_status()
-        return resp.json()["content"][0]["text"]
+        body = resp.json()
+        u = body.get("usage") or {}
+        self._record(u.get("input_tokens"), u.get("output_tokens"),
+                     u.get("cache_read_input_tokens"))
+        return body["content"][0]["text"]
 
     def _openai(self, system: str, user: str) -> str:
         resp = self.http.post(
@@ -80,7 +114,11 @@ class CompletionClient:
             },
         )
         resp.raise_for_status()
-        msg = resp.json()["choices"][0]["message"]
+        body = resp.json()
+        u = body.get("usage") or {}
+        self._record(u.get("prompt_tokens"), u.get("completion_tokens"),
+                     (u.get("prompt_tokens_details") or {}).get("cached_tokens"))
+        msg = body["choices"][0]["message"]
         # Reasoning models (GLM, DeepSeek) may return content=null when the
         # thinking budget runs out; surface whatever text exists, never None.
         return msg.get("content") or msg.get("reasoning_content") or msg.get("reasoning") or ""
@@ -98,6 +136,7 @@ class CompletionClient:
             raise CompletionError(f"{cmd[0]} timed out after {self.config.timeout_s}s") from None
         if proc.returncode != 0:
             raise CompletionError(f"{cmd[0]} exited {proc.returncode}: {proc.stderr[:300]}")
+        self._record()  # subscription CLIs report no token counts
         return proc
 
     def _claude_cli(self, system: str, user: str) -> str:

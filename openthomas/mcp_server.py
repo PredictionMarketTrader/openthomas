@@ -159,7 +159,7 @@ def forecast_market(platform: str, market_id: str) -> dict:
                                   data=assessment.text if assessment else "", anchor=anchor)
     if f is None:
         return {"error": "forecast failed (all ensemble samples unparseable)"}
-    journal.record_forecast(f, m)
+    journal.record_forecast(f, m, data=assessment.text if assessment else "", news=news)
     return {
         "p_raw": f.p_raw, "p_calibrated": f.p_calibrated, "confidence": f.confidence,
         "samples": f.samples, "base_rate": f.base_rate,

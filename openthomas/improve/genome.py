@@ -25,7 +25,15 @@ BASELINE_ID = 0
 
 
 def params_from_settings(settings) -> dict:
-    """Read the current effective value of every genome parameter."""
+    """Read the current effective value of every genome parameter.
+
+    An unevolved prompt slot stays None — "track the built-in default" — and
+    is stored that way in the lineage. Storing the resolved text instead
+    would pin it: every later promotion (even decision-only ones) would
+    freeze the prompt as of that day, and upstream fixes to the built-in
+    template would silently stop reaching deployments. A generation records
+    concrete text only when its operator actually evolved the prompt.
+    """
     return {key: _get_dotted(settings, key) for key in PARAM_SPACE}
 
 
@@ -44,12 +52,25 @@ def _get_dotted(obj, key: str):
     return obj
 
 
+def display_params(params: dict) -> dict:
+    """Params for reports and tables: numbers pass through, None reads as
+    "default", long text becomes a length note instead of flooding the row."""
+    def show(v):
+        if v is None:
+            return "default"
+        if isinstance(v, (int, float)):
+            return v
+        return f"<{len(str(v))} chars>"
+    return {k: show(v) for k, v in params.items()}
+
+
 @dataclass
 class Generation:
     id: int
     parent: int | None
     params: dict
     proposer: str = ""  # "baseline" | "llm" | "random" | "human"
+    operator: str = "decision"  # which mutation operator produced it (docs/RSI.md)
     rationale: str = ""
     evidence: str = ""
     scores: dict = field(default_factory=dict)
@@ -78,10 +99,18 @@ class GenerationStore:
         return [Generation(**g) for g in data.get("generations", [])]
 
     def _save(self, gens: list[Generation]) -> None:
+        """Write through a temp file: the lineage is the only record of what
+        was promoted and why, and a meta-cycle can be killed mid-write (the
+        forecast operator runs for hours on a worker thread). A truncated
+        file reads as "no overrides" — silently discarding every promotion —
+        so it must never exist.
+        """
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(
+        tmp = self.path.with_suffix(".json.tmp")
+        tmp.write_text(
             json.dumps({"generations": [asdict(g) for g in gens]}, indent=1) + "\n"
         )
+        tmp.replace(self.path)
 
     # --- reads -----------------------------------------------------------------
     def all(self) -> list[Generation]:
