@@ -82,6 +82,27 @@ class ModelConfig(BaseModel):
         return os.environ.get(self.api_key_env)
 
 
+class SiteConfig(BaseModel):
+    """The build-in-public feed rendered by `openthomas publish`.
+
+    Everything the agent knows is not everything the agent should broadcast:
+    the feed builder whitelists fields, and these knobs bound how much of the
+    tail it carries.
+    """
+
+    x_handle: str = ""  # without the "@"; empty hides X links entirely
+    github: str = "https://github.com/PredictionMarketTrader/openthomas"
+    huggingface: str = ""  # org page where models trained on the journal are released
+    # A serving alias is not a model name: vLLM's --served-model-name can be
+    # anything ("og-coding"), and publishing it tells a reader nothing about
+    # what the agent thinks with. Name the model, and link its weights.
+    model_label: str = ""  # "" falls back to the forecaster's configured model id
+    model_url: str = ""  # where the weights live, e.g. a Hugging Face repo
+    max_theses: int = 12  # open positions + live edges shown
+    max_curve_points: int = 500  # equity curve is downsampled to this
+    max_reasoning_chars: int = 700  # per-thesis excerpt of model reasoning
+
+
 class Settings(BaseModel):
     bankroll: float = 1000.0  # USD the agent may deploy; it can never exceed this
     goal: str = "Grow the bankroll steadily; protecting capital beats chasing returns."
@@ -105,6 +126,7 @@ class Settings(BaseModel):
     forecast_prompt: str | None = None
     news_enabled: bool = True  # free keyless retrieval (GDELT + Google News RSS)
     news_max_articles: int = 6
+    site: SiteConfig = Field(default_factory=SiteConfig)
     home: Path = HOME
 
     @property

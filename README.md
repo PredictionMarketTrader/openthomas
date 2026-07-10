@@ -1,6 +1,6 @@
 # OpenThomas — the weather trader for prediction markets
 
-[![PyPI](https://img.shields.io/pypi/v/openthomas)](https://pypi.org/project/openthomas/) [![CI](https://github.com/autotradingagent/openthomas/actions/workflows/ci.yml/badge.svg)](https://github.com/autotradingagent/openthomas/actions) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://pypi.org/project/openthomas/)
+[![PyPI](https://img.shields.io/pypi/v/openthomas)](https://pypi.org/project/openthomas/) [![CI](https://github.com/PredictionMarketTrader/openthomas/actions/workflows/ci.yml/badge.svg)](https://github.com/PredictionMarketTrader/openthomas/actions) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://pypi.org/project/openthomas/)
 
 **An autonomous AI agent that trades weather markets on Kalshi and Polymarket. It knows the exact NWS station each market settles on, builds a probability for every strike from a seven-model forecast consensus, learns each station's systematic bias from months of leak-free hindcasts, lets an LLM adjust — within hard bounds — for what the statistics can't see, and sizes every position with fractional Kelly under risk limits no model can override. It learns from every settled degree.**
 
@@ -69,6 +69,8 @@ KPHL  high L1  bias +2.3 σ 2.1
 
 `openthomas vital` renders a shareable performance card (equity curve, win rate, Brier score, max drawdown) — post your track record, good or bad.
 
+`openthomas publish` renders `feed.json`: open positions, every live thesis with the market price it was formed against and the observation that would falsify it, the evolution loop's generation lineage, and token spend by node. It is what [openthomas.com](https://openthomas.com) is built from — the reference agent, trading in public. See [docs/SITE.md](docs/SITE.md) to host your own.
+
 ## Quickstart
 
 ```bash
@@ -92,6 +94,9 @@ openthomas run
 # 5. Check in
 openthomas report
 openthomas vital
+
+# 6. Trade in public: render the feed openthomas.com is built from
+openthomas publish --out site
 ```
 
 OpenThomas is weather-first, not weather-only: set `focus: all` in `~/.openthomas/config.yaml` to scan every market like a generalist.
@@ -197,12 +202,12 @@ On weather markets the statistical baseline does the heavy lifting, so the LLM m
 - [ ] Polymarket live execution via official SDK (pUSD)
 - [ ] Market-making on temperature ladders (maker rebates, no taker fees)
 - [ ] Journal → LoRA fine-tuning recipes for local models
-- [ ] Web dashboard, trade-in-public feed (vitals live, fills T+1)
+- [x] Web dashboard, trade-in-public feed — [openthomas.com](https://openthomas.com), `openthomas publish`
 - [ ] Public community leaderboard of (opt-in) vitals
 
 ## Contributing
 
-The interesting problems are open: retrieval quality, resolution-rule matching for cross-venue arbitrage, calibration under small samples, market-making without adverse selection. PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). If you run OpenThomas, share your `vital` card in [Discussions](https://github.com/autotradingagent/openthomas/discussions) — including the losses; honest track records are how this gets better.
+The interesting problems are open: retrieval quality, resolution-rule matching for cross-venue arbitrage, calibration under small samples, market-making without adverse selection. PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). If you run OpenThomas, share your `vital` card in [Discussions](https://github.com/PredictionMarketTrader/openthomas/discussions) — including the losses; honest track records are how this gets better.
 
 ## License
 

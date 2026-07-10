@@ -13,11 +13,13 @@ Python 3.10+, package in `openthomas/`, tests in `tests/` (pytest), deps via
 - `openthomas/research/news.py` — keyless news retrieval (GDELT, Google News RSS)
 - `openthomas/edge/scanner.py` — pre-LLM filters + cross-platform arb detection
 - `openthomas/risk/engine.py` — Kelly sizing, caps, drawdown kill-switch
-- `openthomas/memory/` — SQLite journal + lesson distillation
+- `openthomas/memory/` — SQLite journal + lesson distillation + LLM token ledger
 - `openthomas/kernel/` — parameter bounds + promotion gate for self-improvement
   (kernel plane: operator-owned, see docs/RSI.md)
 - `openthomas/improve/` — the evolution loop: propose → gate → promote/rollback
-- `openthomas/cli.py` — typer CLI (`init/scan/run/report/vital/improve`)
+- `openthomas/site/` — the public build-in-public feed (`feed.json`); the
+  static page that renders it is `site/`, deployed by `deploy/` (docs/SITE.md)
+- `openthomas/cli.py` — typer CLI (`init/scan/run/report/vital/publish/improve`)
 - `openthomas/mcp_server.py` — MCP server (`openthomas-mcp`); paper-only by design
 - `docs/DESIGN.md` — architecture rationale; `docs/EDGE.md` — strategy basis
 
@@ -25,6 +27,13 @@ Python 3.10+, package in `openthomas/`, tests in `tests/` (pytest), deps via
 
 - `openthomas/risk/` must stay deterministic: no LLM calls, no learned
   parameters, full unit coverage. The model proposes; the risk engine disposes.
+  Precisely: the engine code and every safety rail (Kelly fraction, exposure
+  caps, drawdown kill-switch, price-zone and liquidity floors, trade-rate
+  caps) are never evolved. The two entry-*selectivity* knobs that happen to
+  live on RiskProfile — `min_edge` and `market_prior_weight` — are strategy
+  parameters, gate-evolvable inside operator-set bounds (docs/RSI.md);
+  `tests/test_improve.py::test_param_space_never_touches_safety_rails`
+  enforces the line.
 - Paper mode stays the default; live trading keeps requiring both
   `mode: live` in config AND the `--live` flag.
 - Prices are probabilities in [0,1] for the YES side everywhere; Kalshi's

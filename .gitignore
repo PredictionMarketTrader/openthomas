@@ -9,5 +9,7 @@ build/
 data/
 models/
 vital.html
+site/feed.json
+.claude/scheduled_tasks.lock
 *.pem
 .env

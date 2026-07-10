@@ -189,6 +189,17 @@ def vital(out: str = typer.Option("vital.html", help="output HTML file")):
 
 
 @app.command()
+def publish(out: str = typer.Option("site", help="directory to write feed.json into")):
+    """Render the public build-in-public feed (openthomas.com reads feed.json)."""
+    from .site.feed import publish as write_feed
+
+    s = Settings.load()
+    path = write_feed(s, out)
+    size = path.stat().st_size
+    console.print(f"[green]✓[/green] Wrote {path} ({size:,} bytes)")
+
+
+@app.command()
 def hindcast(days: int = typer.Option(90, help="days of history to load (max 92)")):
     """Bulk-load leak-free forecast history so the baseline learns station
     bias/sigma immediately instead of over weeks of live settlements."""

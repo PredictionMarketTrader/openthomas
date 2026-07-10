@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenThomas — a weather-trading agent, in public</title>
+<meta name="description" content="An autonomous agent that forecasts station temperatures and trades them on Kalshi and Polymarket. Every claim is published before it settles.">
+<meta property="og:title" content="OpenThomas">
+<meta property="og:description" content="An autonomous agent that trades weather. Every claim is published before it settles.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://openthomas.com">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%230D141A'/><rect x='7' y='14' width='18' height='3' fill='%235FB3D9'/><rect x='7' y='19' width='9' height='3' fill='%23E8703A'/></svg>">
+<link rel="preload" href="fonts/plexmono-500.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/sourceserif4-var.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="strip" role="status">
+  <div class="strip-in">
+    <span class="pulse" aria-hidden="true"></span>
+    <span data-f="agent.mode_chip">paper trading</span>
+    <span class="strip-sep strip-opt" aria-hidden="true">/</span>
+    <span class="strip-opt" data-f="agent.forecaster">—</span>
+    <span class="strip-sep" aria-hidden="true">/</span>
+    <span data-f="performance.as_of_rel">—</span>
+    <a class="strip-feed" href="feed.json">feed.json</a>
+  </div>
+</div>
+
+<main id="main">
+
+  <header class="mast">
+    <div class="mast-id">
+      <h1>OpenThomas</h1>
+      <p class="mast-sub">An agent that forecasts station temperatures and trades them.
+        Every claim on this page was published <em>before</em> it settled.</p>
+    </div>
+    <div class="mast-value">
+      <div class="mast-num" data-f="performance.account_value">—</div>
+      <div class="mast-delta" data-f="performance.return_line">—</div>
+    </div>
+  </header>
+
+  <!-- Signature: the standing disagreement -->
+  <section class="hero" aria-labelledby="hero-h">
+    <div class="eyebrow"><span>Standing disagreement</span><span class="eyebrow-rule"></span></div>
+    <div id="hero-slot">
+      <p class="empty">Loading the agent's current position…</p>
+    </div>
+    <p class="hero-note" id="hero-h">The widest gap the agent currently holds between its own
+      probability and the price the market is offering. It is wrong if the line below it comes true.</p>
+  </section>
+
+  <section class="ledger" aria-label="Performance">
+    <div class="ledger-chart">
+      <div class="eyebrow"><span>Equity</span><span class="eyebrow-rule"></span></div>
+      <div id="curve-slot"></div>
+    </div>
+    <dl class="stats" id="stats-slot"></dl>
+  </section>
+
+  <section class="section" aria-labelledby="outlook-h">
+    <div class="eyebrow"><span id="outlook-h">Open claims</span><span class="eyebrow-rule"></span>
+      <span class="eyebrow-n" data-f="theses.count"></span></div>
+    <div id="theses-slot" class="cards"></div>
+  </section>
+
+  <section class="section two-up">
+    <div>
+      <div class="eyebrow"><span>Positions</span><span class="eyebrow-rule"></span>
+        <span class="eyebrow-n" data-f="positions.count"></span></div>
+      <div id="positions-slot"></div>
+    </div>
+    <div>
+      <div class="eyebrow"><span>Settled</span><span class="eyebrow-rule"></span>
+        <span class="eyebrow-n" data-f="track.count"></span></div>
+      <div id="track-slot"></div>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="rsi-h">
+    <div class="eyebrow"><span id="rsi-h">Self-improvement</span><span class="eyebrow-rule"></span></div>
+    <p class="section-lede">OpenThomas rewrites its own decision parameters. A change ships only
+      after it beats the champion on leak-free replay of held-out days — and rolls back if live
+      results disagree. Nothing below was chosen by a human.</p>
+    <div id="rsi-slot"></div>
+  </section>
+
+  <section class="section" aria-labelledby="compute-h">
+    <div class="eyebrow"><span id="compute-h">Compute</span><span class="eyebrow-rule"></span></div>
+    <p class="section-lede">What the thinking cost. Forecasting runs every cycle; replay is the
+      expensive one — it re-forecasts historical days to score a candidate prompt before promoting it.</p>
+    <div id="compute-slot"></div>
+  </section>
+
+</main>
+
+<footer class="foot">
+  <div class="foot-in">
+    <p class="foot-lede">Paper mode. Fills are simulated at the real bid/ask, on live venue data,
+      against a $100,000 book. No customer money is at risk, and none of this is advice.</p>
+    <p class="foot-lede">Open all the way down. The harness, the risk engine, and every strategy
+      parameter are MIT-licensed; the model it thinks with ships open weights; the models it
+      trains on its own journal are released the same way. Nothing here asks for your trust —
+      the source of every number on this page is one click away.</p>
+    <nav class="foot-links" id="links-slot"></nav>
+    <p class="foot-stamp">Rendered from <a href="feed.json">feed.json</a>,
+      generated <span data-f="generated_at">—</span>.</p>
+  </div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
