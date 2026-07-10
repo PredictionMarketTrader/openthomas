@@ -40,8 +40,8 @@ openthomas = "openthomas.cli:app"
 openthomas-mcp = "openthomas.mcp_server:main"
 
 [project.urls]
-Homepage = "https://github.com/autotradingagent/openthomas"
-Repository = "https://github.com/autotradingagent/openthomas"
+Homepage = "https://github.com/PredictionMarketTrader/openthomas"
+Repository = "https://github.com/PredictionMarketTrader/openthomas"
 
 [tool.ruff]
 line-length = 100

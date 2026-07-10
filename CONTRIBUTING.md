@@ -3,7 +3,7 @@
 ## Setup
 
 ```bash
-git clone https://github.com/autotradingagent/openthomas
+git clone https://github.com/PredictionMarketTrader/openthomas
 cd openthomas
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"

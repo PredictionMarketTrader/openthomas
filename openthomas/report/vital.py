@@ -41,7 +41,7 @@ since ${bankroll:,.0f} start</span></p>
   <div class="stat"><div class="k">avg loss</div><div class="v">${avg_loss:,.2f}</div></div>
   <div class="stat"><div class="k">max drawdown</div><div class="v">{max_dd:.1%}</div></div>
 </div>
-<div class="foot"><span>github.com/autotradingagent/openthomas</span><span>{span}</span></div>
+<div class="foot"><span>github.com/PredictionMarketTrader/openthomas</span><span>{span}</span></div>
 </div></body></html>"""
 
 

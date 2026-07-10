@@ -16,7 +16,7 @@ from .stations import Station
 
 API = "https://api.weather.gov"
 USER_AGENT = os.environ.get(
-    "OPENTHOMAS_NWS_UA", "openthomas (github.com/autotradingagent/openthomas)"
+    "OPENTHOMAS_NWS_UA", "openthomas (github.com/PredictionMarketTrader/openthomas)"
 )
 
 _MONTHS = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY",
