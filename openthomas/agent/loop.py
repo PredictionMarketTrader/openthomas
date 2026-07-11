@@ -94,6 +94,27 @@ class Agent:
             account_value=value,
         )
 
+    def _assess(self, market: Market, cache: dict):
+        """Weather assessment, memoized per cycle. assess() is read-only, so
+        caching only removes duplicate I/O — the ranker and the forecast loop
+        share one call per market."""
+        if market.id not in cache:
+            try:
+                cache[market.id] = self.weather.assess(market)
+            except Exception:
+                cache[market.id] = None
+        return cache[market.id]
+
+    def _baseline_gap(self, market: Market, cache: dict) -> float | None:
+        """|p_base − mid|: how far the statistical baseline sits from the
+        market. The scanner ranks the forecast budget by this. None when the
+        market isn't a weather market or the baseline can't be formed — those
+        rank after everything scoreable."""
+        a = self._assess(market, cache)
+        if a is None or a.p_base is None or market.mid is None:
+            return None
+        return abs(a.p_base - market.mid)
+
     def _settle(self, report: CycleReport) -> None:
         for pos in self.journal.positions():
             connector = self.connectors.get(pos.platform)
@@ -141,7 +162,15 @@ class Agent:
                                       "HALTED: max drawdown kill-switch")
             return report
 
-        scan: ScanResult = self.scanner.scan(markets)
+        # Rank candidates by how far our statistical baseline sits from the
+        # market price — a mispricing proxy that needs no LLM — so the cycle's
+        # scarce forecast budget lands on markets we think are wrong, not merely
+        # busy. The assessment is memoized for the cycle: the ranker warms this
+        # cache for every candidate, and the forecast loop below reuses it, so
+        # each market is assessed at most once.
+        assessments: dict[str, object | None] = {}
+        scan: ScanResult = self.scanner.scan(
+            markets, score_fn=lambda m: self._baseline_gap(m, assessments))
         report.candidates = len(scan.candidates)
         report.arbs = [a.describe() for a in scan.arbs[:5]]
 
@@ -158,12 +187,8 @@ class Agent:
             if market.id in positioned or self.journal.has_recent_forecast(market.id):
                 continue
 
-            assessment = None
+            assessment = self._assess(market, assessments)
             news = ""
-            try:
-                assessment = self.weather.assess(market)
-            except Exception:
-                pass
 
             if assessment is not None and assessment.decided:
                 # The observation already forces the outcome — no LLM needed.
