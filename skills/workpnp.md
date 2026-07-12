@@ -40,7 +40,7 @@ then fund escrow — this returns an HTTP 402, pay it with `x402-fetch` and
 
 ```bash
 WORKPNP_API_KEY=$WORKPNP_API_KEY BUYER_WALLET_KEY=$WORKPNP_BUYER_WALLET_KEY \
-  npx tsx WORKPNP-REPO/scripts/fund-job.ts <job_id> <bid_id>
+  npx tsx <workpnp-repo>/scripts/fund-job.ts <job_id> <bid_id>
 ```
 
 Nothing is charged until this succeeds; the worker cannot start before the
