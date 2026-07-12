@@ -13,3 +13,6 @@ site/feed.json
 .claude/scheduled_tasks.lock
 *.pem
 .env
+
+# Local infra/topology — kept private, out of the open-source tree
+deploy/
