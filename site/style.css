@@ -85,6 +85,10 @@ h1 {
 .mast-sub { font: 400 clamp(16px, 1.5vw, 19px)/1.62 var(--serif); color: var(--vapor);
             margin: 0; max-width: 30em; text-wrap: pretty; }
 .mast-sub em { color: var(--paper); font-style: italic; }
+.mast-links { display: flex; gap: 26px; flex-wrap: wrap; margin-top: 24px;
+              font-size: var(--lab); letter-spacing: .16em; text-transform: uppercase; }
+.mast-links a { color: var(--vapor); }
+.mast-links a:hover { color: var(--paper); }
 
 .mast-value { text-align: right; }
 .mast-num { font: 500 clamp(28px, 3.6vw, 40px)/1 var(--mono); letter-spacing: -.035em;

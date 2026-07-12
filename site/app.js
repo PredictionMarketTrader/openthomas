@@ -385,7 +385,7 @@ function renderChrome(feed) {
   nav.textContent = "";
   const links = [
     ["Source on GitHub", feed.links.github],
-    ["Models on Hugging Face", feed.links.huggingface],
+    ["Models & data on Hugging Face", feed.links.huggingface],
     ["Claims, timestamped on X", feed.links.x],
   ];
   for (const [label, href] of links) {
