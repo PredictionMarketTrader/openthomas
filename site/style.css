@@ -418,6 +418,41 @@ h1 { font: 600 clamp(30px, 5vw, 54px)/1 var(--mono); letter-spacing: -.045em; ma
   .lenses { top: 46px; gap: 1px; }
   .lens { padding: 6px 10px; letter-spacing: .06em; }
 }
+
+/* --- thin dark scrollbars that blend with the space theme ------------------- */
+.opprail-list, .detail, .detail-reason {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--vapor) 42%, transparent) transparent;
+}
+.opprail-list::-webkit-scrollbar, .detail::-webkit-scrollbar { width: 9px; }
+.opprail-list::-webkit-scrollbar-track, .detail::-webkit-scrollbar-track { background: transparent; }
+.opprail-list::-webkit-scrollbar-thumb, .detail::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--vapor) 38%, transparent);
+  border-radius: 5px; border: 2px solid transparent; background-clip: padding-box;
+}
+.opprail-list::-webkit-scrollbar-thumb:hover, .detail::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--vapor) 62%, transparent); background-clip: padding-box;
+}
+
+/* --- time axis: scrub the Pangu forecast forward ---------------------------- */
+.timeaxis { position: absolute; left: 50%; bottom: clamp(58px, 12vh, 96px); transform: translateX(-50%);
+            z-index: 3; display: flex; align-items: center; gap: 12px;
+            background: color-mix(in srgb, var(--ink) 84%, transparent); backdrop-filter: blur(9px);
+            border: 1px solid var(--rule); border-radius: 999px; padding: 7px 16px 7px 8px;
+            box-shadow: var(--shadow); }
+.ta-play { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--rule);
+           background: var(--panel); color: var(--paper); cursor: pointer; font-size: 10px; line-height: 1; flex: none; }
+.ta-play:hover { border-color: var(--mercury); color: var(--mercury); }
+.ta-slider { -webkit-appearance: none; appearance: none; width: clamp(130px, 26vw, 260px); height: 4px;
+             background: var(--rule); border-radius: 2px; cursor: pointer; }
+.ta-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 15px; height: 15px; border-radius: 50%;
+             background: var(--mercury); border: 2px solid var(--ink); cursor: pointer; }
+.ta-slider::-moz-range-thumb { width: 15px; height: 15px; border-radius: 50%; background: var(--mercury);
+             border: 2px solid var(--ink); cursor: pointer; }
+.ta-label { font: 500 var(--lab)/1 var(--mono); letter-spacing: .1em; text-transform: uppercase;
+            color: var(--paper); white-space: nowrap; font-variant-numeric: tabular-nums; min-width: 6.5em; }
+.ta-src { font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--mercury); white-space: nowrap; }
+@media (max-width: 620px) { .ta-src { display: none; } .timeaxis { bottom: 152px; } }
 .field-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--mercury); flex: none;
              box-shadow: 0 0 0 0 color-mix(in srgb, var(--mercury) 60%, transparent);
              animation: pulse 2.6s ease-out infinite; }

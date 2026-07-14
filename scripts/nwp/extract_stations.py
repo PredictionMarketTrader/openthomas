@@ -87,46 +87,63 @@ def main() -> int:
                     rows += 1
     print(f"wrote {rows} rows for {len(STATIONS)} stations → {out}")
 
-    # A coarse global 2 m temperature grid (°C) for the public globe's heat
-    # field — our own forecast, not a third-party nowcast. Best-effort: a
-    # failure here must not lose the station rows above.
+    # Our own forecast fields for the public globe, not a third-party nowcast:
+    # a fine "now" grid for the default view, and a coarser daily series for the
+    # time axis. Best-effort — a failure here must not lose the station rows.
     try:
-        cells = _write_global_grid(ds, Path(args.grib).parent, issued_at)
+        cells, leads = _write_grids(ds, Path(args.grib).parent, issued_at)
         print(f"wrote global temperature grid ({cells} cells) → tempgrid.json")
+        print(f"wrote temperature series ({leads} daily leads) → tempseries.json")
     except Exception as e:  # noqa: BLE001 — telemetry, never fatal
         print(f"global grid skipped: {e}", file=sys.stderr)
     return 0
 
 
-def _write_global_grid(ds, run_dir: Path, issued_at: str, res: float = 2.5) -> int:
-    """Sample the 2t field onto a regular lon/lat grid at the step whose valid
-    time is nearest now (our model's current-conditions field), °C, and write it
-    beside the GRIB in the same shape the site's Open-Meteo grid uses."""
-    import numpy as np
-    import xarray as xr
-
+def _sample_field(ds, xr, np, step_idx: int, res: float) -> dict:
+    """The 2t field at one forecast step on a regular res° lon/lat grid, °C."""
     lats = np.arange(-90.0, 90.0 + 1e-6, res)
     lons = np.arange(-180.0, 180.0, res)
     src = ds.longitude.values
     sel_lons = lons % 360 if src.max() > 180 else lons
+    field = ds["t2m"].isel(step=step_idx).sel(
+        latitude=xr.DataArray(lats, dims="y"),
+        longitude=xr.DataArray(sel_lons, dims="x"), method="nearest")
+    celsius = field.values - 273.15
+    return {"lat0": float(lats[0]), "lon0": float(lons[0]), "dlat": res, "dlon": res,
+            "ny": int(len(lats)), "nx": int(len(lons)),
+            "temps": [round(float(v), 1) for v in celsius.reshape(-1)]}
+
+
+def _write_grids(ds, run_dir: Path, issued_at: str) -> tuple[int, int]:
+    """tempgrid.json — the fine (2.5°) field valid nearest now, for the default
+    view. tempseries.json — a coarser (5°) daily series from now out to +6 days,
+    for the time axis; each lead carries only its temps, the grid shape is shared.
+    """
+    import numpy as np
+    import xarray as xr
 
     vt = ds.valid_time.values.astype("datetime64[s]")
     now = np.datetime64(datetime.now(timezone.utc).replace(tzinfo=None), "s")
-    idx = int(np.abs(vt - now).argmin())
+    idx0 = int(np.abs(vt - now).argmin())
 
-    field = ds["t2m"].isel(step=idx).sel(
-        latitude=xr.DataArray(lats, dims="y"),
-        longitude=xr.DataArray(sel_lons, dims="x"), method="nearest")
-    celsius = field.values - 273.15  # (y, x)
-    grid = {
-        "lat0": float(lats[0]), "lon0": float(lons[0]),
-        "dlat": res, "dlon": res, "ny": int(len(lats)), "nx": int(len(lons)),
-        "temps": [round(float(v), 1) for v in celsius.reshape(-1)],
-        "as_of": str(vt[idx]) + "+00:00", "issued": issued_at,
-        "source": "OpenThomas · Pangu-Weather",
-    }
+    grid = _sample_field(ds, xr, np, idx0, 2.5)
+    grid.update({"as_of": str(vt[idx0]) + "+00:00", "issued": issued_at,
+                 "source": "OpenThomas · Pangu-Weather"})
     (run_dir / "tempgrid.json").write_text(json.dumps(grid))
-    return len(grid["temps"])
+
+    leads = []
+    for k in range(0, 7):
+        j = int(np.abs(vt - (vt[idx0] + np.timedelta64(k * 24, "h"))).argmin())
+        f = _sample_field(ds, xr, np, j, 5.0)
+        leads.append({"as_of": str(vt[j]) + "+00:00",
+                      "lead_h": int((vt[j] - vt[idx0]) / np.timedelta64(1, "h")),
+                      "temps": f["temps"]})
+    base = _sample_field(ds, xr, np, idx0, 5.0)  # shared grid shape
+    series = {"nx": base["nx"], "ny": base["ny"], "lat0": base["lat0"], "lon0": base["lon0"],
+              "dlat": 5.0, "dlon": 5.0, "issued": issued_at,
+              "source": "OpenThomas · Pangu-Weather", "leads": leads}
+    (run_dir / "tempseries.json").write_text(json.dumps(series))
+    return len(grid["temps"]), len(leads)
 
 
 if __name__ == "__main__":

@@ -63,3 +63,9 @@ if ssh "${SSH_OPTS[@]}" "$HOST" "test -f '$RUN/tempgrid.json'"; then
 else
   echo "[$(date -Is)] no tempgrid.json in $RUN (older run?) — globe stays on Open-Meteo"
 fi
+
+# The daily forecast series for the globe's time axis (lazy-loaded by the site).
+if ssh "${SSH_OPTS[@]}" "$HOST" "test -f '$RUN/tempseries.json'"; then
+  ssh "${SSH_OPTS[@]}" "$HOST" "cat '$RUN/tempseries.json'" > "$HOME/.openthomas/pangu-tempseries.json"
+  echo "[$(date -Is)] pulled Pangu temperature series → pangu-tempseries.json"
+fi

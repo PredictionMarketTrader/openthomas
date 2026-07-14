@@ -63,7 +63,7 @@
     if (!ctx) throw new Error("no 2d");
     var reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
     var dpr = Math.min(devicePixelRatio || 1, 2);
-    var markers = [], skillMarkers = [], anomMarkers = [], GRID = null, gridV = 0, LENS = "temp", hiPlace = null;
+    var markers = [], skillMarkers = [], anomMarkers = [], GRID = null, leadGrid = null, gridV = 0, LENS = "temp", hiPlace = null;
     var rot = -95, tilt = 20, zoom = 1;
     var dragging = false, moved = false, lastX = 0, lastY = 0, idleAt = 0, hovered = null;
     var W = 0, H = 0, cx = 0, cy = 0, R = 0, raf = 0;
@@ -82,20 +82,20 @@
                y: cy - R * (Math.cos(p0) * Math.sin(phi) - Math.sin(p0) * Math.cos(phi) * Math.cos(lam - l0)),
                c: c, vis: c >= -0.02 };
     }
-    function sampleTemp(lon, lat) {
-      if (!GRID) return null;
-      var fx = (lon - GRID.lon0) / GRID.dlon, fy = (lat - GRID.lat0) / GRID.dlat;
+    function sampleTemp(lon, lat, G) {
+      var fx = (lon - G.lon0) / G.dlon, fy = (lat - G.lat0) / G.dlat;
       var x0 = Math.floor(fx), y0 = Math.floor(fy);
-      if (y0 < 0) y0 = 0; if (y0 > GRID.ny - 2) y0 = GRID.ny - 2;
+      if (y0 < 0) y0 = 0; if (y0 > G.ny - 2) y0 = G.ny - 2;
       var tx = fx - x0, ty = fy - y0;
-      var xa = ((x0 % GRID.nx) + GRID.nx) % GRID.nx, xb = (xa + 1) % GRID.nx;
-      var T = GRID.temps;
-      function g(xi, yi) { var v = T[yi * GRID.nx + xi]; return v == null ? (28 - 0.6 * Math.abs(lat)) : v; }
+      var xa = ((x0 % G.nx) + G.nx) % G.nx, xb = (xa + 1) % G.nx;
+      var T = G.temps;
+      function g(xi, yi) { var v = T[yi * G.nx + xi]; return v == null ? (28 - 0.6 * Math.abs(lat)) : v; }
       var t00 = g(xa, y0), t10 = g(xb, y0), t01 = g(xa, y0 + 1), t11 = g(xb, y0 + 1);
       return (t00 * (1 - tx) + t10 * tx) * (1 - ty) + (t01 * (1 - tx) + t11 * tx) * ty;
     }
 
     function renderField() {
+      var G = leadGrid || GRID;
       var key = rot.toFixed(2) + "," + tilt.toFixed(2) + "," + R.toFixed(1) + "," + W + "," + H + "," + gridV;
       if (key === fldKey) return;                 // view unchanged → reuse buffer
       fldKey = key;
@@ -112,7 +112,7 @@
           var cc = Math.sqrt(1 - rho2);
           var phi = Math.asin(cc * sinp0 + dy * cosp0);
           var lam = l0 + Math.atan2(dx, cc * cosp0 - dy * sinp0);
-          if (GRID) tcol(sampleTemp(lam * R2D, phi * R2D), col);
+          if (G) tcol(sampleTemp(lam * R2D, phi * R2D, G), col);
           else { col[0] = 30 + 26 * cc; col[1] = 74 + 60 * cc; col[2] = 128 + 70 * cc; }  // plain blue planet
           var sh = 0.58 + 0.42 * cc;
           data[idx] = col[0] * sh; data[idx + 1] = col[1] * sh; data[idx + 2] = col[2] * sh; data[idx + 3] = 255;
@@ -275,6 +275,7 @@
       setSkill: function (list) { skillMarkers = list || []; },
       setAnomaly: function (list) { anomMarkers = list || []; },
       setTemps: function (grid) { GRID = grid || null; gridV++; },
+      showLead: function (grid) { leadGrid = grid || null; gridV++; },   // time-axis override
       setLens: function (m) { LENS = m || "temp"; fldKey = ""; },   // force a field repaint
       highlight: function (place) { hiPlace = place || null; },
     };
@@ -288,6 +289,7 @@
     setSkill: function (l) { if (this.api) this.api.setSkill(l); },
     setAnomaly: function (l) { if (this.api) this.api.setAnomaly(l); },
     setTemps: function (g) { if (this.api) this.api.setTemps(g); },
+    showLead: function (g) { if (this.api) this.api.showLead(g); },
     setLens: function (m) { if (this.api) this.api.setLens(m); },
     highlight: function (p) { if (this.api) this.api.highlight(p); },
     focus: function (lon, lat) { if (this.api) this.api.focus(lon, lat); },

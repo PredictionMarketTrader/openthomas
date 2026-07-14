@@ -560,6 +560,57 @@ function setLens(mode) {
   document.querySelectorAll(".lens").forEach((b) => b.classList.toggle("on", b.dataset.lens === mode));
   window.OTGlobe && OTGlobe.setLens(mode);
   refreshRail();
+  updateTimeaxis();
+}
+
+/* --- the time axis: scrub our Pangu forecast forward, day by day ------------ */
+let SERIES = null, PLAYING = null;
+
+async function loadSeries() {
+  try {
+    const r = await fetch("tempseries.json", { cache: "no-store" });
+    if (!r.ok) return;
+    const s = await r.json();
+    if (!s.leads || !s.leads.length) return;
+    SERIES = s;
+    const sl = $("#ta-slider");
+    if (sl) { sl.max = s.leads.length - 1; sl.value = 0; sl.addEventListener("input", () => setLead(+sl.value)); }
+    const play = $("#ta-play"); if (play) play.addEventListener("click", togglePlay);
+    updateTimeaxis();
+    setLead(0);
+  } catch (e) { /* no series → no time axis */ }
+}
+
+function leadGridFor(i) {
+  if (i <= 0) return null;   // "now" uses the crisp default field
+  const L = SERIES.leads[i];
+  return { nx: SERIES.nx, ny: SERIES.ny, lat0: SERIES.lat0, lon0: SERIES.lon0,
+           dlat: SERIES.dlat, dlon: SERIES.dlon, temps: L.temps };
+}
+
+function setLead(i) {
+  if (!SERIES) return;
+  const sl = $("#ta-slider"); if (sl && +sl.value !== i) sl.value = i;
+  window.OTGlobe && OTGlobe.showLead(leadGridFor(i));
+  const L = SERIES.leads[i], lab = $("#ta-label");
+  if (lab) lab.textContent = i === 0 ? "now"
+    : `+${Math.round(L.lead_h / 24)}d · ${new Date(L.as_of).toLocaleDateString("en-US", { timeZone: "UTC", month: "short", day: "numeric" })}`;
+}
+
+function togglePlay() {
+  const btn = $("#ta-play");
+  if (PLAYING) { clearInterval(PLAYING); PLAYING = null; if (btn) btn.textContent = "▶"; return; }
+  if (btn) btn.textContent = "❚❚";
+  PLAYING = setInterval(() => {
+    const sl = $("#ta-slider"); if (!sl) return;
+    setLead(+sl.value >= +sl.max ? 0 : +sl.value + 1);
+  }, 950);
+}
+
+function updateTimeaxis() {
+  const ta = $("#timeaxis"); if (!ta) return;
+  ta.hidden = !(SERIES && CURRENT_LENS === "temp");
+  if (ta.hidden && PLAYING) { clearInterval(PLAYING); PLAYING = null; const b = $("#ta-play"); if (b) b.textContent = "▶"; }
 }
 
 function placeTip(tip) {  // shared positioning
@@ -779,6 +830,7 @@ async function main() {
     return;
   }
   applyFeed(feed);
+  loadSeries();                                // our Pangu forecast series, if published
 
   setInterval(tickLive, 1000);                 // the "updated Ns ago" counter climbs live
   setInterval(async () => {                    // pull fresh data without a reload
