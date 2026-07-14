@@ -253,6 +253,24 @@ def test_skill_maps_disagreement_and_the_settled_verdict_per_city(settings):
     assert chi["n_settled"] == 1 and chi["win_rate"] == 1.0 and chi["brier_market"] is not None
 
 
+def test_anomaly_is_daily_mean_minus_normal_per_city(settings):
+    """Anomaly needs cached normals; without them it's empty. With normals and a
+    daily-mean per city, it's mean − the month's normal (no time-of-day bias)."""
+    import json as _json
+    from openthomas.weather.anomaly import MONTHS, known_coords
+    j = Journal(settings.db_path)
+    assert build_feed(settings, j)["anomaly"] == []
+
+    clim = {f"{lat},{lon}": {m: 24.0 for m in MONTHS} for _p, lat, lon in known_coords()}
+    (settings.home / "climatology.json").write_text(_json.dumps(clim))
+    daily = {"_t": 9e9, "temps": {f"{lat},{lon}": 20.0 for _p, lat, lon in known_coords()}}
+    (settings.home / "citytemp.json").write_text(_json.dumps(daily))
+
+    a = build_feed(settings, j)["anomaly"]
+    assert len(a) == len(known_coords())
+    assert all(x["anomaly"] == pytest.approx(-4.0, abs=0.1) and x["estimated"] is False for x in a)
+
+
 def test_status_reports_liveness_from_the_heartbeat(settings):
     from openthomas.memory.heartbeat import Heartbeat
 

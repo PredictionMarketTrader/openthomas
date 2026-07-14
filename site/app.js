@@ -415,6 +415,7 @@ function renderGlobe(feed) {
   }));
   window.OTGlobe && OTGlobe.setMarkers(markers);
   window.OTGlobe && OTGlobe.setSkill(feed.skill || []);
+  window.OTGlobe && OTGlobe.setAnomaly(feed.anomaly || []);
   window.OTGlobe && OTGlobe.setTemps(feed.temperature || null);
 
   const total = ((feed.board && feed.board.markets) || []).length;
@@ -518,12 +519,41 @@ function renderSkill(feed) {
   }
 }
 
+function renderAnomaly(feed) {
+  const rows = (feed.anomaly || []).slice(0, 16);
+  railHead("What's unusual right now",
+    "Departure from the monthly normal (°C). Red = hotter than usual, blue = colder — where the market may lag.");
+  const slot = $("#opprail-list");
+  const n = $('[data-f="opp.count"]');
+  if (n) n.textContent = rows.length || "";
+  if (!slot) return;
+  slot.textContent = "";
+  if (!rows.length) { slot.append(el("p", "opp-empty", "Anomaly needs the temperature field and city normals — loading.")); return; }
+  for (const a of rows) {
+    const hot = a.anomaly >= 0;
+    const r = el("button", "opp");
+    const head = el("div", "opp-head");
+    head.append(el("span", "opp-place", a.place),
+                el("span", hot ? "opp-lose" : "opp-side", `${hot ? "+" : ""}${a.anomaly}°C`));
+    const meta = el("div", "opp-meta");
+    meta.append(el("span", null, `now ${a.temp}° · normal ${a.normal}°`),
+                el("span", null, hot ? "hotter than usual" : "colder than usual"));
+    r.append(head, meta);
+    r.addEventListener("mouseenter", () => window.OTGlobe && OTGlobe.highlight(a.place));
+    r.addEventListener("mouseleave", () => window.OTGlobe && OTGlobe.highlight(null));
+    r.addEventListener("click", () => { window.OTGlobe && OTGlobe.focus(a.lon, a.lat); openDetail({ place: a.place }); });
+    slot.append(r);
+  }
+}
+
 let CURRENT_FEED = null, CURRENT_LENS = "temp";
+const RAILS = { edge: renderOpps, skill: renderSkill, anomaly: renderAnomaly };
 function refreshRail() {
   const rail = $("#opprail"); if (!rail) return;
-  if (!CURRENT_FEED || CURRENT_LENS === "temp") { rail.hidden = true; return; }
+  const render = RAILS[CURRENT_LENS];
+  if (!CURRENT_FEED || !render) { rail.hidden = true; return; }
   rail.hidden = false;
-  (CURRENT_LENS === "skill" ? renderSkill : renderOpps)(CURRENT_FEED);
+  render(CURRENT_FEED);
 }
 function setLens(mode) {
   CURRENT_LENS = mode;
@@ -544,6 +574,15 @@ function globeTip(m, x, y) {
   if (!tip) return;
   if (!m) { tip.hidden = true; return; }
   tip.textContent = ""; tip._x = x; tip._y = y;
+
+  if (m.anomaly !== undefined && m.normal !== undefined) {   // anomaly-lens marker
+    const hot = m.anomaly >= 0;
+    tip.append(el("b", null, m.place),
+      el("span", "tip-detail", `${hot ? "+" : ""}${m.anomaly}°C ${hot ? "hotter" : "colder"} than normal`),
+      el("span", "tip-q", `${m.estimated ? "est. " : ""}today ~${m.temp}°C · normal for the month ${m.normal}°C`),
+      el("span", "tip-more", "click for detail"));
+    placeTip(tip); return;
+  }
 
   if (m.disagreement !== undefined) {   // skill-lens marker
     tip.append(el("b", null, m.place),

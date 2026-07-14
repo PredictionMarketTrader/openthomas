@@ -63,7 +63,7 @@
     if (!ctx) throw new Error("no 2d");
     var reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
     var dpr = Math.min(devicePixelRatio || 1, 2);
-    var markers = [], skillMarkers = [], GRID = null, gridV = 0, LENS = "temp", hiPlace = null;
+    var markers = [], skillMarkers = [], anomMarkers = [], GRID = null, gridV = 0, LENS = "temp", hiPlace = null;
     var rot = -95, tilt = 20, zoom = 1;
     var dragging = false, moved = false, lastX = 0, lastY = 0, idleAt = 0, hovered = null;
     var W = 0, H = 0, cx = 0, cy = 0, R = 0, raf = 0;
@@ -129,6 +129,26 @@
         ctx.stroke(); }
     }
 
+    function anomColor(a) {   // diverging: blue cold ← pale → red hot
+      var t = Math.max(-1, Math.min(1, a / 9)), mid = [232, 236, 244];
+      var e = t < 0 ? [70, 120, 230] : [226, 74, 46], f = Math.abs(t);
+      return "rgb(" + Math.round(mid[0] + (e[0] - mid[0]) * f) + "," +
+        Math.round(mid[1] + (e[1] - mid[1]) * f) + "," + Math.round(mid[2] + (e[2] - mid[2]) * f) + ")";
+    }
+    function drawAnomaly(now) {
+      for (var i = 0; i < anomMarkers.length; i++) {
+        var m = anomMarkers[i], p = project(m.lon, m.lat);
+        m._sx = p.x; m._sy = p.y; m._vis = p.vis;
+        if (!p.vis || m.anomaly == null) continue;
+        var rad = 3.5 + Math.min(Math.abs(m.anomaly), 10) / 10 * 13;
+        var col = anomColor(m.anomaly), hi = m === hovered || m.place === hiPlace;
+        ctx.save(); ctx.shadowColor = col; ctx.shadowBlur = hi ? 22 : 13;
+        ctx.beginPath(); ctx.arc(p.x, p.y, rad, 0, 7); ctx.fillStyle = col; ctx.fill(); ctx.restore();
+        ctx.beginPath(); ctx.arc(p.x, p.y, rad, 0, 7); ctx.fillStyle = col; ctx.fill();
+        ctx.lineWidth = 1.4; ctx.strokeStyle = "rgba(10,16,26,.55)"; ctx.stroke();
+        if (hi) { ctx.beginPath(); ctx.arc(p.x, p.y, rad + 5, 0, 7); ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.5; ctx.stroke(); }
+      }
+    }
     function drawSkill(now) {
       // Cities sized by how contrarian we are (disagreement), ringed by whether
       // it has paid: green = beating the market's settled price, red = not, faint
@@ -167,14 +187,15 @@
       strokeLines(BORDERS.countries, "rgba(255,255,255,.3)", 1);
       strokeLines(LAND, "rgba(6,14,24,.6)", 1);
       ctx.restore();
-      var edgeLens = LENS === "edge", skillLens = LENS === "skill";
-      if (edgeLens || skillLens) {   // mute the temperature so our marks are the bright thing
+      var edgeLens = LENS === "edge", skillLens = LENS === "skill", anomLens = LENS === "anomaly";
+      if (edgeLens || skillLens || anomLens) {   // mute the temperature so our marks are the bright thing
         ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.clip();
         ctx.fillStyle = "rgba(6,10,20,.6)"; ctx.fillRect(cx - R, cy - R, 2 * R, 2 * R); ctx.restore();
       }
       ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.strokeStyle = "rgba(150,190,230,.35)"; ctx.lineWidth = 1; ctx.stroke();
 
-      if (skillLens) { drawSkill(now); if (!dragging && !hovered && !reduced && now - idleAt > 2200) rot += 0.04;
+      if (skillLens || anomLens) { (anomLens ? drawAnomaly : drawSkill)(now);
+        if (!dragging && !hovered && !reduced && now - idleAt > 2200) rot += 0.04;
         raf = requestAnimationFrame(draw); return; }
 
       for (var i = 0; i < markers.length; i++) {
@@ -213,7 +234,7 @@
     }
 
     function hit(ex, ey) {
-      var set = LENS === "skill" ? skillMarkers : markers, best = null, bd = 15 * 15;
+      var set = LENS === "skill" ? skillMarkers : LENS === "anomaly" ? anomMarkers : markers, best = null, bd = 15 * 15;
       for (var i = 0; i < set.length; i++) { var m = set[i]; if (!m._vis) continue;
         var dx = m._sx - ex, dy = m._sy - ey, d = dx * dx + dy * dy;
         var pref = m.state === "market" ? d + 40 : d;
@@ -252,6 +273,7 @@
       focus: function (lon, lat) { rot = -lon; tilt = Math.max(-70, Math.min(70, lat)); idleAt = performance.now() + 4000; },
       setMarkers: function (list) { markers = list || []; },
       setSkill: function (list) { skillMarkers = list || []; },
+      setAnomaly: function (list) { anomMarkers = list || []; },
       setTemps: function (grid) { GRID = grid || null; gridV++; },
       setLens: function (m) { LENS = m || "temp"; fldKey = ""; },   // force a field repaint
       highlight: function (place) { hiPlace = place || null; },
@@ -264,6 +286,7 @@
       try { this.api = Globe(c, opts || {}); } catch (e) { var b = document.getElementById("globe"); if (b) b.classList.add("no-gl"); } },
     setMarkers: function (l) { if (this.api) this.api.setMarkers(l); },
     setSkill: function (l) { if (this.api) this.api.setSkill(l); },
+    setAnomaly: function (l) { if (this.api) this.api.setAnomaly(l); },
     setTemps: function (g) { if (this.api) this.api.setTemps(g); },
     setLens: function (m) { if (this.api) this.api.setLens(m); },
     highlight: function (p) { if (this.api) this.api.highlight(p); },

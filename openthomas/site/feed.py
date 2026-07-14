@@ -197,6 +197,75 @@ def _board(journal: Journal, settings: Settings) -> dict:
             "markets": out[: settings.site.max_board]}
 
 
+def _sample_grid(g: dict, lat: float, lon: float) -> float | None:
+    """Bilinear temperature at (lat, lon) from a lon/lat grid, or None if a
+    corner has no data. Longitude wraps; latitude clamps to the poles."""
+    import math
+    nx, ny, temps = g["nx"], g["ny"], g["temps"]
+    fx = (lon - g["lon0"]) / g["dlon"]
+    fy = (lat - g["lat0"]) / g["dlat"]
+    x0 = math.floor(fx)
+    y0 = max(0, min(ny - 2, math.floor(fy)))
+    tx, ty = fx - x0, fy - y0
+    xa, xb = x0 % nx, (x0 + 1) % nx
+    c = [temps[y0 * nx + xa], temps[y0 * nx + xb],
+         temps[(y0 + 1) * nx + xa], temps[(y0 + 1) * nx + xb]]
+    if any(v is None for v in c):
+        return None
+    return (c[0] * (1 - tx) + c[1] * tx) * (1 - ty) + (c[2] * (1 - tx) + c[3] * tx) * ty
+
+
+def _anomaly(settings: Settings, grid: dict | None) -> list[dict]:
+    """How far each city sits from its monthly normal (°C). Red-hot, blue-cold on
+    the globe — unusual weather is where markets are slow to reprice.
+
+    The comparison must be mean-to-mean or the day/night cycle drowns it out, so
+    we use today's daily-mean temperature per city when a fetch has cached one;
+    otherwise we estimate the daily mean from the current grid snapshot by
+    subtracting a modelled diurnal swing (warm ~15:00 local, cool ~03:00). Needs
+    cached normals; empty without them.
+    """
+    import math
+
+    from ..weather.anomaly import MONTHS, current_temps, known_coords, normals
+    nrm = normals(settings.home)
+    if not nrm:
+        return []
+    daily = current_temps(settings.home)
+    if not daily and not grid:
+        return []
+
+    now = datetime.now(timezone.utc)
+    month = MONTHS[now.month - 1]
+    try:
+        snap = datetime.fromisoformat(grid["as_of"]) if grid else now
+        uh = snap.astimezone(timezone.utc).hour + snap.minute / 60
+    except (KeyError, ValueError, TypeError):
+        uh = now.hour + now.minute / 60
+
+    out = []
+    for place, lat, lon in known_coords():
+        key = f"{lat},{lon}"
+        n = nrm.get(key)
+        if not n or month not in n:
+            continue
+        mean = daily.get(key)
+        if mean is None and grid is not None:
+            cur = _sample_grid(grid, lat, lon)
+            if cur is None:
+                continue
+            local = (uh + lon / 15.0) % 24
+            mean = cur - 4.5 * math.cos(2 * math.pi * (local - 15) / 24)  # → est. daily mean
+        if mean is None:
+            continue
+        out.append({"place": place, "lat": lat, "lon": lon,
+                    "temp": round(mean, 1), "normal": n[month],
+                    "anomaly": round(mean - n[month], 1),
+                    "estimated": key not in daily})
+    out.sort(key=lambda x: -abs(x["anomaly"]))
+    return out
+
+
 def _skill(journal: Journal, settings: Settings) -> list[dict]:
     """Per place: how contrarian we are, and whether it pays.
 
@@ -388,6 +457,7 @@ def _compute(settings: Settings, journal: Journal, status: dict) -> dict:
 def build_feed(settings: Settings, journal: Journal | None = None) -> dict:
     journal = journal or Journal(settings.db_path)
     status = _status(settings)
+    temperature = global_grid(settings.home)
     return {
         "schema_version": SCHEMA_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -408,9 +478,10 @@ def build_feed(settings: Settings, journal: Journal | None = None) -> dict:
             "market_prior_weight": settings.risk.market_prior_weight,
         },
         "performance": _performance(journal, settings),
-        "temperature": global_grid(settings.home),
+        "temperature": temperature,
         "board": _board(journal, settings),
         "skill": _skill(journal, settings),
+        "anomaly": _anomaly(settings, temperature),
         "positions": [
             {"platform": p.platform, "question": p.question, "category": p.category,
              "side": p.side.value, "qty": p.qty, "avg_cost": round(p.avg_cost, 4),
