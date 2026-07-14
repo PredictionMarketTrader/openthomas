@@ -128,7 +128,7 @@ def test_publish_writes_feed_json_atomically(settings, tmp_path):
     Journal(settings.db_path)
     path = publish(settings, tmp_path / "site")
     assert path.name == "feed.json"
-    assert json.loads(path.read_text())["schema_version"] == 1
+    assert json.loads(path.read_text())["schema_version"] == 2
     assert not list(path.parent.glob("*.tmp"))
 
 
@@ -142,6 +142,100 @@ def test_compute_dates_the_ledger_so_zero_tokens_is_not_read_as_cheap(settings):
     compute = build_feed(settings, j)["compute"]
     assert compute["ledger_started"] == "2026-07-10T00:00:00+00:00"
     assert compute["total"]["total_tokens"] == 1200
+
+
+def test_session_spend_counts_only_this_run(settings):
+    """'This run' is spend since the process started (heartbeat.run_started).
+    The all-time total keeps every call; the session total keeps only the ones
+    stamped after the run began."""
+    from openthomas.memory.heartbeat import Heartbeat
+
+    ledger = UsageLedger(settings.home)
+    ledger.record(Usage(ts="2026-07-10T00:00:00+00:00", node="forecast", provider="openai",
+                        model="glm-5.2", prompt_tokens=1000, completion_tokens=100))  # last run
+    hb = Heartbeat(settings.home)
+    hb.start()  # run_started = now; the row above predates it
+    ledger.record(Usage(ts=hb.run_started, node="forecast", provider="openai",
+                        model="glm-5.2", prompt_tokens=40, completion_tokens=60))  # this run
+
+    compute = build_feed(settings, Journal(settings.db_path))["compute"]
+    assert compute["total"]["total_tokens"] == 1200  # both calls
+    assert compute["session"]["total"]["total_tokens"] == 100  # only this run
+    assert compute["session"]["since"] == hb.run_started
+
+
+def test_theses_carry_a_location_and_keep_the_ticker_private(settings):
+    """Each weather edge is placed where its weather is — the Kalshi series
+    ticker resolves to a settlement station — so the globe can pin it. The
+    ticker is used to look up coords but never ships."""
+    j = Journal(settings.db_path)
+    f = Forecast(); f.market_id = "KXHIGHCHI-26JUL14-T94"  # Chicago Midway series
+    m = Market(id=f.market_id, platform="kalshi",
+               question="Will the high be 94-95° tomorrow?",
+               category="climate/weather", yes_bid=0.39, yes_ask=0.41)
+    j.record_forecast(f, m)
+    feed = build_feed(settings, j)
+    (thesis,) = feed["theses"]
+    assert thesis["loc"]["place"].startswith("Chicago")
+    assert thesis["loc"]["lat"] == pytest.approx(41.786, abs=0.01)
+    assert "KXHIGHCHI" not in json.dumps(feed)  # the ticker stayed private
+
+
+def test_a_market_we_cannot_place_gets_no_pin(settings):
+    from openthomas.weather.geo import locate
+    assert locate("X", "kalshi", "Will the S&P close above 6000?") is None
+    assert locate("Y", "polymarket", "Will the highest temperature in Atlantis be 30°C?") is None
+    assert locate("Z", "polymarket", "highest temperature in Paris be 35°C")["place"] == "Paris"
+
+
+def test_board_plots_the_whole_book_with_our_view_joined(settings):
+    """The globe board carries every located market. A market we forecast an
+    edge on is 'pending' and carries our analysis; a plain book market carries
+    price only; neither ships the market id."""
+    from openthomas.memory.board import Board
+
+    m = market(mid=0.40, market_id="KXHIGHCHI-26JUL14-T94")
+    m.question = "Will the high be 94-95°?"
+    Board(settings.home).write([m])  # live snapshot: one Chicago market, no view yet
+    board = build_feed(settings, Journal(settings.db_path))["board"]
+    assert board["from_snapshot"] is True
+    (row,) = board["markets"]
+    assert row["state"] == "market" and row["place"].startswith("Chicago")
+    assert row["mid"] == pytest.approx(0.40) and "reasoning" not in row  # lean until we opine
+
+    # now record a forecast with a big edge → it becomes a 'pending' pin with analysis
+    j = Journal(settings.db_path)
+    f = Forecast(); f.market_id = m.id
+    j.record_forecast(f, m)
+    row = next(r for r in build_feed(settings, j)["board"]["markets"] if r["state"] == "pending")
+    assert row["reasoning"] and row["edge"] is not None
+    assert "KXHIGHCHI" not in json.dumps(build_feed(settings, j))  # id stays private
+
+
+def test_feed_carries_the_cached_temperature_grid_without_fetching(settings):
+    """The globe's heatmap reads a cached grid; building the feed never touches
+    the network (the refresh runs publish-side). No cache → no grid, no error."""
+    import json as _json
+    assert build_feed(settings, Journal(settings.db_path))["temperature"] is None
+
+    grid = {"lat0": -90, "lon0": -180, "dlat": 10, "dlon": 10, "ny": 19, "nx": 36,
+            "temps": [12.0] * (19 * 36), "as_of": "2026-07-14T03:00:00+00:00"}
+    (settings.home / "tempgrid.json").write_text(_json.dumps({"_t": 1, "grid": grid}))
+    got = build_feed(settings, Journal(settings.db_path))["temperature"]
+    assert got["nx"] == 36 and got["ny"] == 19 and len(got["temps"]) == 684
+
+
+def test_status_reports_liveness_from_the_heartbeat(settings):
+    from openthomas.memory.heartbeat import Heartbeat
+
+    assert build_feed(settings, Journal(settings.db_path))["status"]["last_cycle"] is None
+
+    hb = Heartbeat(settings.home)
+    hb.start()
+    hb.beat()
+    status = build_feed(settings, Journal(settings.db_path))["status"]
+    assert status["cycles_this_run"] == 1
+    assert status["run_started"] and status["last_cycle"]
 
 
 # --- token ledger ----------------------------------------------------------------

@@ -27,11 +27,15 @@ from pathlib import Path
 from ..config import Settings
 from ..forecast.calibration import brier_score
 from ..improve.genome import GenerationStore, display_params
+from ..memory import board as board_store
+from ..memory import heartbeat
 from ..memory.journal import Journal
 from ..memory.usage import UsageLedger, summarize
 from ..report.vital import max_drawdown
+from ..weather.geo import locate
+from ..weather.temps import global_grid
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def _downsample(curve: list[tuple[str, float]], limit: int) -> list[list]:
@@ -74,6 +78,9 @@ def _thesis(row: dict, settings: Settings, status: str) -> dict:
         "invalidation": row.get("invalidation") or "",
         "reasoning": reasoning[:cap] + ("…" if len(reasoning) > cap else ""),
         "model": row.get("model") or "",
+        # Where the weather is — for the globe. Derived from the market, never
+        # the returned id, so no venue handle leaks.
+        "loc": locate(row.get("market_id"), row["platform"], row["question"]),
     }
 
 
@@ -109,6 +116,87 @@ def _theses(journal: Journal, settings: Settings) -> list[dict]:
     return out[: settings.site.max_theses]
 
 
+def _board(journal: Journal, settings: Settings) -> dict:
+    """Every weather market the agent is watching, placed on the globe with our
+    view attached: which we forecast, hold, or have already won or lost.
+
+    Prefers the live snapshot the trading loop writes each cycle (the whole
+    book, with real prices); falls back to the markets we have forecast when no
+    snapshot exists yet, so the globe is never empty. Market ids are the join
+    key and stay server-side — only place, price, and our published view ship.
+    Plain markets (no view of ours) carry price only; ours carry the analysis.
+    """
+    snap = board_store.read(settings.home) or {}
+    rows = snap.get("markets")
+    from_snapshot = rows is not None
+    if not rows:  # no snapshot yet: plot the markets we have opinions on
+        seen: set[str] = set()
+        rows = []
+        for r in journal.recent_forecasts(limit=400):
+            if r["market_id"] in seen:
+                continue
+            seen.add(r["market_id"])
+            rows.append({"id": r["market_id"], "platform": r["platform"],
+                         "question": r["question"], "category": r["category"],
+                         "yes_bid": None, "yes_ask": None, "mid": r.get("mid"),
+                         "volume_24h": None, "close_time": None})
+
+    positions = {p.market_id: p for p in journal.positions()}
+    settled = {s["market_id"]: s for s in journal.recent_settlements(limit=200)}
+    latest: dict[str, dict] = {}
+    for r in journal.recent_forecasts(limit=400):  # DESC ts → first seen is newest
+        latest.setdefault(r["market_id"], r)
+
+    fresh = datetime.now(timezone.utc) - timedelta(hours=24)
+    cap = settings.site.max_reasoning_chars
+    out = []
+    for m in rows:
+        loc = locate(m.get("id"), m["platform"], m["question"])
+        if loc is None:
+            continue  # can't place it → no pin
+        mid = m.get("mid")
+        if mid is None and m.get("yes_bid") is not None and m.get("yes_ask") is not None:
+            mid = (m["yes_bid"] + m["yes_ask"]) / 2
+        f, s, pos = latest.get(m["id"]), settled.get(m["id"]), positions.get(m["id"])
+        p_model = round(f["p_calibrated"], 4) if f else None
+        edge = None if (p_model is None or mid is None) else round(p_model - mid, 4)
+
+        if s is not None:
+            state = "won" if s["pnl"] >= 0 else "lost"
+        elif pos is not None:
+            state = "held"
+        elif (f and edge is not None and abs(edge) >= settings.risk.min_edge
+              and datetime.fromisoformat(f["ts"]) >= fresh):
+            state = "pending"
+        else:
+            state = "market"
+
+        entry = {
+            "loc": loc, "place": loc["place"], "platform": m["platform"],
+            "question": m["question"], "state": state,
+            "mid": None if mid is None else round(mid, 4),
+            "yes_bid": m.get("yes_bid"), "yes_ask": m.get("yes_ask"),
+            "volume": m.get("volume_24h"),
+            "close": m.get("close_time"),
+        }
+        if state != "market":  # our view — kept lean for plain book markets
+            reasoning = (f.get("reasoning") if f else "") or ""
+            entry.update({
+                "p_model": p_model, "edge": edge,
+                "side": None if edge is None else ("yes" if edge > 0 else "no"),
+                "why": (f.get("market_gap_reason") if f else "") or "",
+                "reasoning": reasoning[:cap] + ("…" if len(reasoning) > cap else ""),
+                "outcome": s["outcome"] if s else None,
+                "pnl": None if s is None else round(s["pnl"], 2),
+            })
+        out.append(entry)
+
+    rank = {"held": 0, "pending": 1, "won": 2, "lost": 3, "market": 4}
+    out.sort(key=lambda e: (rank[e["state"]], -abs(e.get("edge") or 0)))
+    return {"from_snapshot": from_snapshot, "as_of": snap.get("ts"),
+            "markets": out[: settings.site.max_board]}
+
+
 def _performance(journal: Journal, settings: Settings) -> dict:
     curve = journal.equity_curve()
     stats = journal.settlement_stats()
@@ -137,7 +225,8 @@ def _track_record(journal: Journal) -> list[dict]:
     return [
         {"ts": s["ts"], "platform": s["platform"], "question": s["question"],
          "category": s["category"] or "", "outcome": s["outcome"],
-         "pnl": round(s["pnl"], 2), "cost_basis": round(s["cost_basis"], 2)}
+         "pnl": round(s["pnl"], 2), "cost_basis": round(s["cost_basis"], 2),
+         "loc": locate(s["market_id"], s["platform"], s["question"])}
         for s in journal.recent_settlements(limit=25)
     ]
 
@@ -188,17 +277,38 @@ def _rsi(settings: Settings) -> dict:
     }
 
 
-def _compute(settings: Settings, journal: Journal) -> dict:
-    """Token spend, with the two facts that keep a small number from lying.
+def _status(settings: Settings) -> dict:
+    """Is the loop alive, and when did it last act? Straight from the heartbeat.
 
-    `ledger_started` dates the accounting — the agent forecast for weeks before
+    `last_cycle` is the honest liveness signal — the site decides "live" from
+    how recent it is, rather than this builder asserting a state it cannot see.
+    An empty beat is the truthful answer before the loop's first cycle.
+    """
+    beat = heartbeat.read(settings.home) or {}
+    return {
+        "run_started": beat.get("run_started"),
+        "last_cycle": beat.get("last_cycle"),
+        "cycles_this_run": beat.get("cycles_this_run") or 0,
+    }
+
+
+def _compute(settings: Settings, journal: Journal, status: dict) -> dict:
+    """Token spend — all-time, and just this run — with the facts that keep a
+    small number from lying.
+
+    `ledger_started` dates the accounting: the agent forecast for weeks before
     it counted tokens, and a reader seeing "0 tokens" deserves to know whether
-    that means "cheap" or "not measured yet". `forecasts_recorded` is the
-    journal's own count, which predates the ledger.
+    that means "cheap" or "not measured yet". `session` is spend since the
+    current process started (see status.run_started), so a reader can watch
+    what this run costs without doing the subtraction. `forecasts_recorded` is
+    the journal's own count, which predates the ledger.
     """
     rows = UsageLedger(settings.home).read()
+    started = status.get("run_started")
+    session_rows = [r for r in rows if started and r.ts >= started]
     return {
         **summarize(rows),
+        "session": {**summarize(session_rows), "since": started},
         "ledger_started": min((r.ts for r in rows), default=None),
         "forecasts_recorded": journal.forecast_count(),
     }
@@ -206,9 +316,11 @@ def _compute(settings: Settings, journal: Journal) -> dict:
 
 def build_feed(settings: Settings, journal: Journal | None = None) -> dict:
     journal = journal or Journal(settings.db_path)
+    status = _status(settings)
     return {
         "schema_version": SCHEMA_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "status": status,
         "agent": {
             "mode": settings.mode,
             "focus": settings.focus,
@@ -225,16 +337,19 @@ def build_feed(settings: Settings, journal: Journal | None = None) -> dict:
             "market_prior_weight": settings.risk.market_prior_weight,
         },
         "performance": _performance(journal, settings),
+        "temperature": global_grid(settings.home),
+        "board": _board(journal, settings),
         "positions": [
             {"platform": p.platform, "question": p.question, "category": p.category,
              "side": p.side.value, "qty": p.qty, "avg_cost": round(p.avg_cost, 4),
-             "cost_basis": round(p.cost_basis, 2)}
+             "cost_basis": round(p.cost_basis, 2),
+             "loc": locate(p.market_id, p.platform, p.question)}
             for p in journal.positions()
         ],
         "theses": _theses(journal, settings),
         "track_record": _track_record(journal),
         "rsi": _rsi(settings),
-        "compute": _compute(settings, journal),
+        "compute": _compute(settings, journal, status),
         "links": {
             "github": settings.site.github,
             "huggingface": settings.site.huggingface,
