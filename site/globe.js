@@ -63,7 +63,7 @@
     if (!ctx) throw new Error("no 2d");
     var reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
     var dpr = Math.min(devicePixelRatio || 1, 2);
-    var markers = [], GRID = null, gridV = 0;
+    var markers = [], GRID = null, gridV = 0, LENS = "temp", hiPlace = null;
     var rot = -95, tilt = 20, zoom = 1;
     var dragging = false, moved = false, lastX = 0, lastY = 0, idleAt = 0, hovered = null;
     var W = 0, H = 0, cx = 0, cy = 0, R = 0, raf = 0;
@@ -147,34 +147,42 @@
       strokeLines(BORDERS.countries, "rgba(255,255,255,.3)", 1);
       strokeLines(LAND, "rgba(6,14,24,.6)", 1);
       ctx.restore();
+      var edgeLens = LENS === "edge";
+      if (edgeLens) {   // mute the temperature so live edges are the only bright thing
+        ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.clip();
+        ctx.fillStyle = "rgba(6,10,20,.6)"; ctx.fillRect(cx - R, cy - R, 2 * R, 2 * R); ctx.restore();
+      }
       ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.strokeStyle = "rgba(150,190,230,.35)"; ctx.lineWidth = 1; ctx.stroke();
 
       for (var i = 0; i < markers.length; i++) {
         var m = markers[i], p = project(m.lon, m.lat);
         m._sx = p.x; m._sy = p.y; m._vis = p.vis;
-        if (!p.vis || m.state !== "market") continue;
+        if (!p.vis || m.state !== "market" || edgeLens) continue;  // edge lens hides the plain book
         ctx.beginPath(); ctx.arc(p.x, p.y, m === hovered ? 2.7 : 1.9, 0, 7);
         ctx.fillStyle = m === hovered ? "rgba(240,248,255,.98)" : "rgba(226,240,255,.62)"; ctx.fill();
       }
       var ours = markers.filter(function (m) { return m.state !== "market"; })
         .sort(function (a, b) { return (ORDER[a.state] || 0) - (ORDER[b.state] || 0); });
+      var boost = edgeLens ? 1.55 : 1;
       for (var k = 0; k < ours.length; k++) {
         var o = ours[k], q = project(o.lon, o.lat);
         if (!q.vis) continue;
-        var st = STYLES[o.state] || STYLES.pending, rad = st.r * (0.85 + 0.55 * (o.weight || 0.3));
+        var hi = o === hovered || o.place === hiPlace;
+        var live = o.state === "held" || o.state === "pending";
+        if (edgeLens && !live) { ctx.globalAlpha = 0.35; } // settled fades in the edge lens
+        var st = STYLES[o.state] || STYLES.pending, rad = st.r * (0.85 + 0.55 * (o.weight || 0.3)) * boost;
         if (!reduced && o.state === "held") { var t = (now % 1700) / 1700;
           ctx.beginPath(); ctx.arc(q.x, q.y, rad + t * 12, 0, 7);
           ctx.strokeStyle = "rgba(240,128,58," + (0.5 * (1 - t)).toFixed(3) + ")"; ctx.lineWidth = 1.5; ctx.stroke(); }
-        ctx.save(); ctx.shadowColor = st.glow; ctx.shadowBlur = o === hovered ? 20 : 12;
+        ctx.save(); ctx.shadowColor = st.glow; ctx.shadowBlur = hi ? 22 : (edgeLens ? 18 : 12);
         ctx.beginPath(); ctx.arc(q.x, q.y, rad, 0, 7); ctx.fillStyle = st.fill; ctx.fill(); ctx.restore();
         ctx.beginPath(); ctx.arc(q.x, q.y, rad, 0, 7); ctx.fillStyle = st.fill; ctx.fill();
         ctx.lineWidth = 1.6; ctx.strokeStyle = st.ring; ctx.stroke();
-        if (o.count > 1) {                                   // a cluster: a thin outer ring
-          ctx.beginPath(); ctx.arc(q.x, q.y, rad + 3.5, 0, 7);
-          ctx.strokeStyle = "rgba(255,255,255,.5)"; ctx.lineWidth = 1; ctx.stroke();
-        }
-        if (o === hovered) { ctx.beginPath(); ctx.arc(q.x, q.y, rad + 5, 0, 7);
-          ctx.strokeStyle = st.ring; ctx.lineWidth = 1; ctx.stroke(); }
+        if (o.count > 1) { ctx.beginPath(); ctx.arc(q.x, q.y, rad + 3.5, 0, 7);
+          ctx.strokeStyle = "rgba(255,255,255,.5)"; ctx.lineWidth = 1; ctx.stroke(); }
+        if (hi) { ctx.beginPath(); ctx.arc(q.x, q.y, rad + 6, 0, 7);
+          ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 1.5; ctx.stroke(); }
+        ctx.globalAlpha = 1;
       }
 
       if (!dragging && !hovered && !reduced && now - idleAt > 2200) rot += 0.04;
@@ -221,6 +229,8 @@
       focus: function (lon, lat) { rot = -lon; tilt = Math.max(-70, Math.min(70, lat)); idleAt = performance.now() + 4000; },
       setMarkers: function (list) { markers = list || []; },
       setTemps: function (grid) { GRID = grid || null; gridV++; },
+      setLens: function (m) { LENS = m || "temp"; fldKey = ""; },   // force a field repaint
+      highlight: function (place) { hiPlace = place || null; },
     };
   }
 
@@ -230,6 +240,8 @@
       try { this.api = Globe(c, opts || {}); } catch (e) { var b = document.getElementById("globe"); if (b) b.classList.add("no-gl"); } },
     setMarkers: function (l) { if (this.api) this.api.setMarkers(l); },
     setTemps: function (g) { if (this.api) this.api.setTemps(g); },
+    setLens: function (m) { if (this.api) this.api.setLens(m); },
+    highlight: function (p) { if (this.api) this.api.highlight(p); },
     focus: function (lon, lat) { if (this.api) this.api.focus(lon, lat); },
   };
   window.OTStars = { init: function (id) { var c = document.getElementById(id); if (c && c.getContext) try { Stars(c); } catch (e) {} } };

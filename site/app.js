@@ -431,6 +431,60 @@ function renderGlobe(feed) {
   } else if (legend) { legend.style.display = "none"; }
 }
 
+/* --- the edge lens: where the money is right now --------------------------- */
+function oppScore(m) {
+  const edge = Math.abs(m.edge || 0);
+  const liq = m.volume == null ? 0.5 : Math.min(m.volume / 50000, 1);
+  let urg = 0.6;
+  if (m.close) { const days = (new Date(m.close) - Date.now()) / 86400000;
+    urg = days <= 0 ? 0.2 : days < 2 ? 1 : days < 5 ? 0.85 : days < 10 ? 0.6 : 0.4; }
+  return edge * (0.5 + 0.5 * liq) * (0.5 + 0.5 * urg);
+}
+function closesIn(iso) {
+  const h = (new Date(iso) - Date.now()) / 3600000;
+  return h < 0 ? "now" : h < 24 ? Math.round(h) + "h" : Math.round(h / 24) + "d";
+}
+
+function renderOpps(feed) {
+  const rows = ((feed.board && feed.board.markets) || [])
+    .filter((m) => m.loc && (m.state === "pending" || m.state === "held") && m.edge != null)
+    .sort((a, b) => oppScore(b) - oppScore(a)).slice(0, 14);
+  const slot = $("#opprail-list");
+  const n = $('[data-f="opp.count"]');
+  if (n) n.textContent = rows.length || "";
+  if (!slot) return;
+  slot.textContent = "";
+  if (!rows.length) {
+    slot.append(el("p", "opp-empty",
+      "No live edge clears the bar right now — the agent is holding cash, which is the point."));
+    return;
+  }
+  for (const m of rows) {
+    const r = el("button", "opp"); r.dataset.s = m.state;
+    const head = el("div", "opp-head");
+    head.append(el("span", "opp-place", m.place),
+                el("span", "opp-edge", cents(Math.abs(m.edge)) + " edge"));
+    const meta = el("div", "opp-meta");
+    meta.append(el("span", "opp-side", m.state === "held" ? "holding" : (m.side ? `buy ${m.side}` : "")),
+                el("span", null, `us ${(m.p_model * 100).toFixed(0)}% · mkt ${m.mid != null ? (m.mid * 100).toFixed(0) + "%" : "—"}`));
+    if (m.close) meta.append(el("span", "opp-close", "closes " + closesIn(m.close)));
+    r.append(head, el("div", "opp-q", m.question), meta);
+    r.addEventListener("mouseenter", () => window.OTGlobe && OTGlobe.highlight(m.place));
+    r.addEventListener("mouseleave", () => window.OTGlobe && OTGlobe.highlight(null));
+    r.addEventListener("click", () => {
+      window.OTGlobe && OTGlobe.focus(m.loc.lon, m.loc.lat);
+      openDetail({ place: m.place });
+    });
+    slot.append(r);
+  }
+}
+
+function setLens(mode) {
+  document.querySelectorAll(".lens").forEach((b) => b.classList.toggle("on", b.dataset.lens === mode));
+  window.OTGlobe && OTGlobe.setLens(mode);
+  const rail = $("#opprail"); if (rail) rail.hidden = mode !== "edge";
+}
+
 function globeTip(m, x, y) {
   const tip = $("#globe-tip");
   if (!tip) return;
@@ -601,6 +655,7 @@ function applyFeed(feed) {
   renderCompute(feed);
   renderLive(feed);
   renderGlobe(feed);
+  renderOpps(feed);
   SEEN.generated = feed.generated_at;
 }
 
@@ -611,6 +666,7 @@ async function main() {
     onSelect: (m) => { openDetail(m); window.OTGlobe.focus(m.lon, m.lat); },
   });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDetail(); });
+  document.querySelectorAll(".lens").forEach((b) => b.addEventListener("click", () => setLens(b.dataset.lens)));
 
   const feed = await fetchFeed();
   if (!feed) {
