@@ -233,6 +233,26 @@ def test_feed_carries_the_cached_temperature_grid_without_fetching(settings):
     assert got["source"] == "OpenThomas · Pangu-Weather" and got["nx"] == 144
 
 
+def test_skill_maps_disagreement_and_the_settled_verdict_per_city(settings):
+    """Disagreement is our probability gap vs the market over every forecast at a
+    place (data-rich); the settled skill/win verdict is added once markets
+    resolve there."""
+    j = Journal(settings.db_path)
+    f = Forecast(); f.market_id = "KXHIGHCHI-26JUL14-T94"   # Chicago Midway series
+    m = market(mid=0.40, market_id=f.market_id)
+    j.record_forecast(f, m)
+    chi = next(c for c in build_feed(settings, j)["skill"] if c["place"].startswith("Chicago"))
+    assert chi["disagreement"] == pytest.approx(0.30, abs=0.01)  # our 0.70 vs market 0.40
+    assert chi["n_forecasts"] == 1 and chi["n_settled"] == 0 and chi["win_rate"] is None
+
+    order = Order(market_id=f.market_id, platform="kalshi", side=Side.YES, action=Action.BUY,
+                  qty=10, limit_price=0.41, reason="edge")
+    j.record_fill(Fill(order=order, qty=10, price=0.41, fee=0.05), m)
+    j.record_settlement(j.positions()[0], Side.YES)
+    chi = next(c for c in build_feed(settings, j)["skill"] if c["place"].startswith("Chicago"))
+    assert chi["n_settled"] == 1 and chi["win_rate"] == 1.0 and chi["brier_market"] is not None
+
+
 def test_status_reports_liveness_from_the_heartbeat(settings):
     from openthomas.memory.heartbeat import Heartbeat
 

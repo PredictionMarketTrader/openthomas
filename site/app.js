@@ -414,6 +414,7 @@ function renderGlobe(feed) {
     lat: g.lat, lon: g.lon, place: g.place, state: g.state, weight: g.weight, count: g.count,
   }));
   window.OTGlobe && OTGlobe.setMarkers(markers);
+  window.OTGlobe && OTGlobe.setSkill(feed.skill || []);
   window.OTGlobe && OTGlobe.setTemps(feed.temperature || null);
 
   const total = ((feed.board && feed.board.markets) || []).length;
@@ -447,10 +448,16 @@ function closesIn(iso) {
   return h < 0 ? "now" : h < 24 ? Math.round(h) + "h" : Math.round(h / 24) + "d";
 }
 
+function railHead(title, foot) {
+  const t = document.querySelector(".rail-title"); if (t) t.textContent = title;
+  const f = document.querySelector(".opprail-foot"); if (f) f.textContent = foot;
+}
+
 function renderOpps(feed) {
   const rows = ((feed.board && feed.board.markets) || [])
     .filter((m) => m.loc && (m.state === "pending" || m.state === "held") && m.edge != null)
     .sort((a, b) => oppScore(b) - oppScore(a)).slice(0, 14);
+  railHead("Where the edges are", "Ranked by edge × liquidity × time to close. Click to fly there.");
   const slot = $("#opprail-list");
   const n = $('[data-f="opp.count"]');
   if (n) n.textContent = rows.length || "";
@@ -481,29 +488,83 @@ function renderOpps(feed) {
   }
 }
 
+function renderSkill(feed) {
+  const rows = (feed.skill || []).filter((s) => s.disagreement != null).slice(0, 16);
+  railHead("Where we fight the crowd",
+    "Size = how contrarian we are; ring = the settled verdict vs the market. Click to fly there.");
+  const slot = $("#opprail-list");
+  const n = $('[data-f="opp.count"]');
+  if (n) n.textContent = rows.length || "";
+  if (!slot) return;
+  slot.textContent = "";
+  if (!rows.length) { slot.append(el("p", "opp-empty", "No forecasts on record yet.")); return; }
+  for (const s of rows) {
+    const r = el("button", "opp");
+    const head = el("div", "opp-head");
+    head.append(el("span", "opp-place", s.place), el("span", "opp-edge", cents(s.disagreement) + " apart"));
+    const meta = el("div", "opp-meta");
+    if (s.n_settled) {
+      const won = s.pnl >= 0;
+      meta.append(el("span", won ? "opp-win" : "opp-lose", won ? "beats market" : "behind market"),
+                  el("span", null, `${Math.round((s.win_rate || 0) * 100)}% win · ${signed(s.pnl)} · ${s.n_settled} settled`));
+    } else {
+      meta.append(el("span", "opp-side", `${s.n_forecasts} forecasts · unsettled`));
+    }
+    r.append(head, meta);
+    r.addEventListener("mouseenter", () => window.OTGlobe && OTGlobe.highlight(s.place));
+    r.addEventListener("mouseleave", () => window.OTGlobe && OTGlobe.highlight(null));
+    r.addEventListener("click", () => { window.OTGlobe && OTGlobe.focus(s.lon, s.lat); openDetail({ place: s.place }); });
+    slot.append(r);
+  }
+}
+
+let CURRENT_FEED = null, CURRENT_LENS = "temp";
+function refreshRail() {
+  const rail = $("#opprail"); if (!rail) return;
+  if (!CURRENT_FEED || CURRENT_LENS === "temp") { rail.hidden = true; return; }
+  rail.hidden = false;
+  (CURRENT_LENS === "skill" ? renderSkill : renderOpps)(CURRENT_FEED);
+}
 function setLens(mode) {
+  CURRENT_LENS = mode;
   document.querySelectorAll(".lens").forEach((b) => b.classList.toggle("on", b.dataset.lens === mode));
   window.OTGlobe && OTGlobe.setLens(mode);
-  const rail = $("#opprail"); if (rail) rail.hidden = mode !== "edge";
+  refreshRail();
+}
+
+function placeTip(tip) {  // shared positioning
+  tip.hidden = false;
+  const band = tip.parentElement.getBoundingClientRect();
+  tip.style.left = Math.max(10, Math.min(tip._x + 16, band.width - 300)) + "px";
+  tip.style.top = Math.max(10, Math.min(tip._y - tip.offsetHeight / 2, band.height - tip.offsetHeight - 12)) + "px";
 }
 
 function globeTip(m, x, y) {
   const tip = $("#globe-tip");
   if (!tip) return;
   if (!m) { tip.hidden = true; return; }
+  tip.textContent = ""; tip._x = x; tip._y = y;
+
+  if (m.disagreement !== undefined) {   // skill-lens marker
+    tip.append(el("b", null, m.place),
+      el("span", "tip-detail", `${cents(m.disagreement)} apart from the market · ${m.n_forecasts} forecasts`));
+    tip.append(el("span", "tip-q", m.n_settled
+      ? `settled ${m.n_settled}: ${m.pnl >= 0 ? "beating" : "behind"} the market · ${Math.round((m.win_rate || 0) * 100)}% win`
+        + (m.brier_market != null ? ` · Brier ${m.brier_model} vs ${m.brier_market}` : "")
+      : "not enough settled to score yet"));
+    tip.append(el("span", "tip-more", "click for detail"));
+    placeTip(tip); return;
+  }
+
   const g = GROUPS[m.place] || { items: [m], primary: m };
   const p = g.primary;
-  tip.textContent = "";
   tip.append(el("b", null, m.place));
   const line = STATE_LABEL[p.state] + (p.mid != null ? ` · mkt ${cents(p.mid)}` : "") +
     (p.edge != null ? ` · edge ${cents(Math.abs(p.edge))}` : "");
   tip.append(el("span", "tip-detail", line), el("span", "tip-q", p.question));
   tip.append(el("span", "tip-more", g.items.length > 1
     ? `${g.items.length} markets here · click to see all` : "click for detail"));
-  tip.hidden = false;
-  const band = tip.parentElement.getBoundingClientRect();
-  tip.style.left = Math.max(10, Math.min(x + 16, band.width - 300)) + "px";
-  tip.style.top = Math.max(10, Math.min(y - tip.offsetHeight / 2, band.height - tip.offsetHeight - 12)) + "px";
+  placeTip(tip);
 }
 
 /* --- click a place → all its markets, book + our analysis, history included -- */
@@ -657,7 +718,8 @@ function applyFeed(feed) {
   renderCompute(feed);
   renderLive(feed);
   renderGlobe(feed);
-  renderOpps(feed);
+  CURRENT_FEED = feed;
+  refreshRail();
   SEEN.generated = feed.generated_at;
 }
 

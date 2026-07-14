@@ -63,7 +63,7 @@
     if (!ctx) throw new Error("no 2d");
     var reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
     var dpr = Math.min(devicePixelRatio || 1, 2);
-    var markers = [], GRID = null, gridV = 0, LENS = "temp", hiPlace = null;
+    var markers = [], skillMarkers = [], GRID = null, gridV = 0, LENS = "temp", hiPlace = null;
     var rot = -95, tilt = 20, zoom = 1;
     var dragging = false, moved = false, lastX = 0, lastY = 0, idleAt = 0, hovered = null;
     var W = 0, H = 0, cx = 0, cy = 0, R = 0, raf = 0;
@@ -129,6 +129,26 @@
         ctx.stroke(); }
     }
 
+    function drawSkill(now) {
+      // Cities sized by how contrarian we are (disagreement), ringed by whether
+      // it has paid: green = beating the market's settled price, red = not, faint
+      // = not enough settled yet. Cyan is "we take a side against the crowd here".
+      for (var i = 0; i < skillMarkers.length; i++) {
+        var m = skillMarkers[i], p = project(m.lon, m.lat);
+        m._sx = p.x; m._sy = p.y; m._vis = p.vis;
+        if (!p.vis || m.disagreement == null) continue;
+        var rad = 3 + Math.min(m.disagreement, 0.35) * 34;
+        var settled = m.n_settled > 0;
+        var ring = !settled ? "rgba(210,225,240,.5)" : (m.pnl >= 0 ? "#46c882" : "#e85642");
+        var hi = m === hovered || m.place === hiPlace;
+        ctx.save(); ctx.shadowColor = "rgba(86,190,230,.9)"; ctx.shadowBlur = hi ? 22 : 13;
+        ctx.beginPath(); ctx.arc(p.x, p.y, rad, 0, 7); ctx.fillStyle = "rgba(86,190,230,.82)"; ctx.fill(); ctx.restore();
+        ctx.beginPath(); ctx.arc(p.x, p.y, rad, 0, 7); ctx.fillStyle = "rgba(86,190,230,.82)"; ctx.fill();
+        ctx.lineWidth = settled ? 2.6 : 1.4; ctx.strokeStyle = ring; ctx.stroke();
+        if (hi) { ctx.beginPath(); ctx.arc(p.x, p.y, rad + 5, 0, 7); ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.5; ctx.stroke(); }
+      }
+    }
+
     function draw(now) {
       syncSize();
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -147,12 +167,15 @@
       strokeLines(BORDERS.countries, "rgba(255,255,255,.3)", 1);
       strokeLines(LAND, "rgba(6,14,24,.6)", 1);
       ctx.restore();
-      var edgeLens = LENS === "edge";
-      if (edgeLens) {   // mute the temperature so live edges are the only bright thing
+      var edgeLens = LENS === "edge", skillLens = LENS === "skill";
+      if (edgeLens || skillLens) {   // mute the temperature so our marks are the bright thing
         ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.clip();
         ctx.fillStyle = "rgba(6,10,20,.6)"; ctx.fillRect(cx - R, cy - R, 2 * R, 2 * R); ctx.restore();
       }
       ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.strokeStyle = "rgba(150,190,230,.35)"; ctx.lineWidth = 1; ctx.stroke();
+
+      if (skillLens) { drawSkill(now); if (!dragging && !hovered && !reduced && now - idleAt > 2200) rot += 0.04;
+        raf = requestAnimationFrame(draw); return; }
 
       for (var i = 0; i < markers.length; i++) {
         var m = markers[i], p = project(m.lon, m.lat);
@@ -190,8 +213,8 @@
     }
 
     function hit(ex, ey) {
-      var best = null, bd = 15 * 15;
-      for (var i = 0; i < markers.length; i++) { var m = markers[i]; if (!m._vis) continue;
+      var set = LENS === "skill" ? skillMarkers : markers, best = null, bd = 15 * 15;
+      for (var i = 0; i < set.length; i++) { var m = set[i]; if (!m._vis) continue;
         var dx = m._sx - ex, dy = m._sy - ey, d = dx * dx + dy * dy;
         var pref = m.state === "market" ? d + 40 : d;
         if (pref < bd) { bd = pref; best = m; } }
@@ -228,6 +251,7 @@
     return {
       focus: function (lon, lat) { rot = -lon; tilt = Math.max(-70, Math.min(70, lat)); idleAt = performance.now() + 4000; },
       setMarkers: function (list) { markers = list || []; },
+      setSkill: function (list) { skillMarkers = list || []; },
       setTemps: function (grid) { GRID = grid || null; gridV++; },
       setLens: function (m) { LENS = m || "temp"; fldKey = ""; },   // force a field repaint
       highlight: function (place) { hiPlace = place || null; },
@@ -239,6 +263,7 @@
     init: function (id, opts) { var c = document.getElementById(id); if (!c || !c.getContext) return;
       try { this.api = Globe(c, opts || {}); } catch (e) { var b = document.getElementById("globe"); if (b) b.classList.add("no-gl"); } },
     setMarkers: function (l) { if (this.api) this.api.setMarkers(l); },
+    setSkill: function (l) { if (this.api) this.api.setSkill(l); },
     setTemps: function (g) { if (this.api) this.api.setTemps(g); },
     setLens: function (m) { if (this.api) this.api.setLens(m); },
     highlight: function (p) { if (this.api) this.api.highlight(p); },

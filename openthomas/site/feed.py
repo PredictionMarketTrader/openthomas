@@ -197,6 +197,77 @@ def _board(journal: Journal, settings: Settings) -> dict:
             "markets": out[: settings.site.max_board]}
 
 
+def _skill(journal: Journal, settings: Settings) -> list[dict]:
+    """Per place: how contrarian we are, and whether it pays.
+
+    `disagreement` is the average gap between our probability and the market's,
+    over every recent forecast there — data-rich, it maps where we bet against
+    the crowd. `skill` is 1 − Brier(us)/Brier(market) on *settled* markets: the
+    Prediction Arena baseline is the price itself, so skill > 0 means we've
+    actually beaten it here. Sparse until markets settle, and honest about it
+    (`n_settled`). The globe colours cities by skill, sizes them by disagreement.
+    """
+    from ..report.brier import weather_skill
+    from ..weather.stations import KALSHI_SERIES, STATIONS
+
+    agg: dict[str, dict] = {}
+
+    def cell(place, lat, lon):
+        return agg.setdefault(place, {
+            "place": place, "lat": lat, "lon": lon, "dsum": 0.0, "n_forecasts": 0,
+            "n_settled": 0, "skill": None, "brier_model": None, "brier_market": None,
+            "win": 0, "settled": 0, "pnl": 0.0})
+
+    for r in journal.recent_forecasts(limit=500):
+        if r.get("mid") is None:
+            continue
+        loc = locate(r.get("market_id"), r["platform"], r["question"])
+        if loc is None:
+            continue
+        c = cell(loc["place"], loc["lat"], loc["lon"])
+        c["dsum"] += abs(r["p_calibrated"] - r["mid"])
+        c["n_forecasts"] += 1
+
+    by_station: dict[str, dict] = {}
+    for b in weather_skill(journal):
+        s = by_station.setdefault(b["station"], {"n": 0, "sm": 0.0, "nk": 0, "smk": 0.0})
+        s["n"] += b["n"]; s["sm"] += b["brier_model"] * b["n"]
+        if b["brier_market"] is not None:
+            s["nk"] += b["n"]; s["smk"] += b["brier_market"] * b["n"]
+    for key, s in by_station.items():
+        st = STATIONS[key]
+        c = cell(st.name.split(",")[0], st.lat, st.lon)
+        c["n_settled"] = s["n"]
+        c["brier_model"] = round(s["sm"] / s["n"], 3)
+        if s["nk"]:
+            bk = s["smk"] / s["nk"]
+            c["brier_market"] = round(bk, 3)
+            c["skill"] = round(1 - (s["sm"] / s["n"]) / bk, 3) if bk else None
+
+    for row in journal.recent_settlements(limit=200):
+        hit = KALSHI_SERIES.get(row["market_id"].split("-")[0])
+        if hit is None:
+            continue
+        st = STATIONS[hit[0]]
+        c = cell(st.name.split(",")[0], st.lat, st.lon)
+        c["settled"] += 1
+        c["win"] += 1 if row["pnl"] >= 0 else 0
+        c["pnl"] += row["pnl"]
+
+    out = []
+    for c in agg.values():
+        out.append({
+            "place": c["place"], "lat": c["lat"], "lon": c["lon"],
+            "disagreement": round(c["dsum"] / c["n_forecasts"], 3) if c["n_forecasts"] else None,
+            "n_forecasts": c["n_forecasts"], "n_settled": c["n_settled"],
+            "skill": c["skill"], "brier_model": c["brier_model"], "brier_market": c["brier_market"],
+            "win_rate": round(c["win"] / c["settled"], 2) if c["settled"] else None,
+            "pnl": round(c["pnl"], 2) if c["settled"] else None,
+        })
+    out.sort(key=lambda x: -(abs(x["skill"] or 0) * 5 + (x["disagreement"] or 0)))
+    return out[: settings.site.max_board]
+
+
 def _performance(journal: Journal, settings: Settings) -> dict:
     curve = journal.equity_curve()
     stats = journal.settlement_stats()
@@ -339,6 +410,7 @@ def build_feed(settings: Settings, journal: Journal | None = None) -> dict:
         "performance": _performance(journal, settings),
         "temperature": global_grid(settings.home),
         "board": _board(journal, settings),
+        "skill": _skill(journal, settings),
         "positions": [
             {"platform": p.platform, "question": p.question, "category": p.category,
              "side": p.side.value, "qty": p.qty, "avg_cost": round(p.avg_cost, 4),

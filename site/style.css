@@ -410,10 +410,13 @@ h1 { font: 600 clamp(30px, 5vw, 54px)/1 var(--mono); letter-spacing: -.045em; ma
 .opp-meta { display: flex; gap: 8px 12px; flex-wrap: wrap; font-size: 11px; letter-spacing: .06em;
             text-transform: uppercase; color: var(--vapor); font-variant-numeric: tabular-nums; }
 .opp-side { color: var(--frost); }
+.opp-win { color: var(--gain); }
+.opp-lose { color: var(--ember); }
 .opp-empty { padding: 20px 16px; margin: 0; font: 400 14px/1.55 var(--serif); color: var(--vapor); text-wrap: pretty; }
 @media (max-width: 720px) {
   .opprail { left: 12px; right: 12px; width: auto; top: auto; bottom: 92px; max-height: 42vh; }
-  .lenses { top: 46px; }
+  .lenses { top: 46px; gap: 1px; }
+  .lens { padding: 6px 10px; letter-spacing: .06em; }
 }
 .field-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--mercury); flex: none;
              box-shadow: 0 0 0 0 color-mix(in srgb, var(--mercury) 60%, transparent);
