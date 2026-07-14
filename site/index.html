@@ -4,54 +4,93 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OpenThomas — a weather-trading agent, in public</title>
-<meta name="description" content="An autonomous agent that forecasts station temperatures and trades them on Kalshi and Polymarket. Every claim is published before it settles.">
+<meta name="description" content="An autonomous agent that forecasts station temperatures and trades them on Kalshi and Polymarket. Every weather market it watches, mapped on a live globe; every claim published before it settles.">
 <meta property="og:title" content="OpenThomas">
-<meta property="og:description" content="An autonomous agent that trades weather. Every claim is published before it settles.">
+<meta property="og:description" content="An autonomous agent that trades weather. Every market it watches, mapped on a live globe.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://openthomas.com">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%230D141A'/><rect x='7' y='14' width='18' height='3' fill='%235FB3D9'/><rect x='7' y='19' width='9' height='3' fill='%23E8703A'/></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23070a12'/><circle cx='16' cy='16' r='9' fill='%232860a8'/><circle cx='13' cy='13' r='9' fill='%23070a12'/></svg>">
 <link rel="preload" href="fonts/plexmono-500.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/sourceserif4-var.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css">
+<!-- Bump ?v on every deploy: assets are cached 5 min, index.html is no-cache, so a
+     new version query busts the stale JS/CSS the moment the new HTML loads. -->
+<link rel="stylesheet" href="style.css?v=t4">
 </head>
 <body>
 
-<div class="strip" role="status">
+<canvas id="stars" aria-hidden="true"></canvas>
+
+<div class="strip" role="status" id="strip">
   <div class="strip-in">
     <span class="pulse" aria-hidden="true"></span>
+    <span class="strip-live" data-f="status.live">live</span>
+    <span class="strip-sep" aria-hidden="true">/</span>
     <span data-f="agent.mode_chip">paper trading</span>
     <span class="strip-sep strip-opt" aria-hidden="true">/</span>
     <span class="strip-opt" data-f="agent.forecaster">—</span>
     <span class="strip-sep" aria-hidden="true">/</span>
-    <span data-f="performance.as_of_rel">—</span>
+    <span data-f="status.cycle">cycle —</span>
+    <a class="strip-ago" href="feed.json" data-f="status.updated">updated —</a>
     <a class="strip-feed" href="feed.json">feed.json</a>
   </div>
 </div>
 
+<!-- The planet is the page: a blue Earth in space, every weather market pinned
+     where its weather is. Faint dots are the whole book; glowing pins are ours. -->
+<section class="planet" id="globe" aria-label="Live weather markets">
+  <canvas id="globe-canvas"></canvas>
+
+  <div class="planet-head">
+    <h1>OpenThomas</h1>
+    <p class="planet-sub">An autonomous agent forecasting station temperatures and trading
+      them on Kalshi and Polymarket. Every market it watches is on this globe; every claim
+      was published <em>before</em> it settled.</p>
+    <nav class="planet-links" aria-label="Source">
+      <a href="https://github.com/PredictionMarketTrader/openthomas" rel="noopener">Source</a>
+      <a href="https://huggingface.co/openthomas" rel="noopener">Models &amp; data</a>
+      <a href="feed.json">feed.json</a>
+    </nav>
+  </div>
+
+  <div class="planet-value">
+    <div class="mast-num" data-f="performance.account_value">—</div>
+    <div class="mast-delta" data-f="performance.return_line">—</div>
+    <dl class="mast-tokens">
+      <div><dt>Tokens · all&#8209;time</dt><dd data-f="compute.total_tokens">—</dd></div>
+      <div><dt>Tokens · this run</dt><dd class="tok-run" data-f="compute.session_tokens">—</dd></div>
+    </dl>
+  </div>
+
+  <div class="globe-legend" aria-hidden="true">
+    <span><i class="dot dot-market"></i>market</span>
+    <span><i class="dot dot-pending"></i>edge found</span>
+    <span><i class="dot dot-held"></i>bet placed</span>
+    <span><i class="dot dot-won"></i>won</span>
+    <span><i class="dot dot-lost"></i>lost</span>
+  </div>
+
+  <div class="globe-foot">
+    <span class="globe-cap"><span class="field-dot" aria-hidden="true"></span><span data-f="globe.caption">plotting markets…</span></span>
+    <div class="templegend" aria-hidden="true">
+      <span class="tl-lab">−20°</span>
+      <span class="tl-bar"></span>
+      <span class="tl-lab">40°C</span>
+      <span class="tl-src" data-f="temperature.source">current global temperature</span>
+    </div>
+    <span class="globe-hint">drag to spin · scroll to zoom · click a market</span>
+  </div>
+
+  <div class="globe-tip" id="globe-tip" role="status" hidden></div>
+  <p class="globe-fallback">The globe needs a canvas-capable browser. Every market is in
+    <a href="feed.json">feed.json</a>, and the claims below.</p>
+  <div class="scrollcue" aria-hidden="true">the desk ↓</div>
+</section>
+
 <main id="main">
 
-  <header class="mast">
-    <div class="mast-id">
-      <h1>OpenThomas</h1>
-      <p class="mast-sub">An agent that forecasts station temperatures and trades them.
-        Every claim on this page was published <em>before</em> it settled.</p>
-      <nav class="mast-links" aria-label="Source">
-        <a href="https://github.com/PredictionMarketTrader/openthomas" rel="noopener">Source on GitHub</a>
-        <a href="https://huggingface.co/openthomas" rel="noopener">Models &amp; data on Hugging Face</a>
-      </nav>
-    </div>
-    <div class="mast-value">
-      <div class="mast-num" data-f="performance.account_value">—</div>
-      <div class="mast-delta" data-f="performance.return_line">—</div>
-    </div>
-  </header>
-
-  <!-- Signature: the standing disagreement -->
   <section class="hero" aria-labelledby="hero-h">
     <div class="eyebrow"><span>Standing disagreement</span><span class="eyebrow-rule"></span></div>
-    <div id="hero-slot">
-      <p class="empty">Loading the agent's current position…</p>
-    </div>
+    <div id="hero-slot"><p class="empty">Loading the agent's current position…</p></div>
     <p class="hero-note" id="hero-h">The widest gap the agent currently holds between its own
       probability and the price the market is offering. It is wrong if the line below it comes true.</p>
   </section>
@@ -100,20 +139,25 @@
 
 </main>
 
+<aside class="detail" id="detail" aria-live="polite" hidden></aside>
+
 <footer class="foot">
   <div class="foot-in">
     <p class="foot-lede">Paper mode. Fills are simulated at the real bid/ask, on live venue data,
       against a $100,000 book. No customer money is at risk, and none of this is advice.</p>
     <p class="foot-lede">Open all the way down. The harness, the risk engine, and every strategy
       parameter are MIT-licensed; the model it thinks with ships open weights; the models it
-      trains on its own journal are released the same way. Nothing here asks for your trust —
-      the source of every number on this page is one click away.</p>
+      trains on its own journal are released the same way. The source of every number on this
+      page is one click away.</p>
     <nav class="foot-links" id="links-slot"></nav>
     <p class="foot-stamp">Rendered from <a href="feed.json">feed.json</a>,
       generated <span data-f="generated_at">—</span>.</p>
   </div>
 </footer>
 
-<script src="app.js"></script>
+<script src="world.js?v=t4"></script>
+<script src="borders.js?v=t4"></script>
+<script src="globe.js?v=t4"></script>
+<script src="app.js?v=t4"></script>
 </body>
 </html>

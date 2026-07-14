@@ -304,24 +304,39 @@ function renderRsi(feed) {
 }
 
 /* --- compute ----------------------------------------------------------------- */
+function tokenColumn(kind, title, dot, b, extra) {
+  const col = el("div", "tok-col" + (kind ? " " + kind : ""));
+  const h = el("h4");
+  if (dot) h.append(el("span", "field-dot"));
+  h.append(document.createTextNode(title));
+  const big = el("div", "tok-big");
+  big.append(document.createTextNode(tokens(b.total_tokens)),
+             el("span", "tok-unit", "tokens"));
+  const meta = el("div", "tok-meta");
+  const put = (label, val) => {
+    const s = el("span");
+    s.append(document.createTextNode(label + " "), el("b", null, val));
+    meta.append(s);
+  };
+  put("in", tokens(b.prompt_tokens));
+  put("out", tokens(b.completion_tokens));
+  put("calls", nfmt(b.calls));
+  if (extra) meta.append(el("span", null, extra));
+  col.append(h, big, meta);
+  return col;
+}
+
 function renderCompute(feed) {
   const slot = $("#compute-slot");
   const c = feed.compute;
+  const session = c.session || { total: c.total, since: null };
   slot.textContent = "";
 
-  const grid = el("div", "tokens");
-  const boxes = [
-    ["Tokens in", tokens(c.total.prompt_tokens)],
-    ["Tokens out", tokens(c.total.completion_tokens)],
-    ["Model calls", nfmt(c.total.calls)],
-    ["Forecasts on record", nfmt(c.forecasts_recorded)],
-  ];
-  for (const [k, v] of boxes) {
-    const b = el("div", "stat");
-    b.append(el("dt", null, k), el("dd", null, v));
-    grid.append(b);
-  }
-  slot.append(grid);
+  const split = el("div", "tok-split");
+  split.append(tokenColumn("", "All-time", false, c.total));
+  split.append(tokenColumn("run", "This run", true, session.total,
+    session.since ? "since " + ago(session.since) : "since the loop last started"));
+  slot.append(split);
 
   if (!c.ledger_started) {
     slot.append(el("p", "empty",
@@ -345,10 +360,165 @@ function renderCompute(feed) {
   slot.append(bars);
 
   const flat = c.total.calls_without_usage;
-  const note = `Counted since ${c.ledger_started.slice(0, 10)}.` + (flat
+  const note = `All-time counted since ${c.ledger_started.slice(0, 10)}; the split above is per model role.` + (flat
     ? ` ${plural(flat, "call")} went to a flat-rate subscription endpoint that reports no token counts; they are not in the totals above.`
     : "");
   slot.append(el("p", "empty", note));
+}
+
+/* --- liveness: the strip and the field track a running agent ----------------
+   Live if the loop's last cycle is recent relative to its own cadence. The
+   timestamp is re-read every second so "updated 3s ago" counts up on screen —
+   a still page reads as a dead one. */
+let LIVE = { lastCycle: null, cycleMax: 20 };
+
+function renderLive(feed) {
+  const st = feed.status || {};
+  LIVE.lastCycle = st.last_cycle || feed.performance.as_of || null;
+  LIVE.cycleMax = (feed.agent.cycle_minutes || 20) * 2 + 10;
+
+  const set = (k, v) => { const n = $(`[data-f="${k}"]`); if (n) n.textContent = v; };
+  set("status.cycle", st.cycles_this_run ? `cycle ${nfmt(st.cycles_this_run)}` : "warming up");
+  tickLive();
+}
+
+/* --- the planet: the whole board, plus click-to-expand ---------------------- */
+const STATE_LABEL = { market: "on the board", pending: "edge found",
+                      held: "bet placed", won: "won", lost: "lost" };
+
+const PRIO = { held: 4, pending: 3, won: 2, lost: 1, market: 0 };
+let GROUPS = {};   // place → { lat, lon, place, items[], primary, state, count, weight }
+
+function groupBoard(feed) {
+  const rows = (feed.board && feed.board.markets) || [];
+  const g = {};
+  for (const e of rows) {
+    if (!e.loc) continue;
+    const k = e.place || `${e.loc.lat},${e.loc.lon}`;
+    (g[k] || (g[k] = { lat: e.loc.lat, lon: e.loc.lon, place: e.place || k, items: [] })).items.push(e);
+  }
+  for (const k in g) {
+    const grp = g[k];
+    grp.items.sort((a, b) => PRIO[b.state] - PRIO[a.state] || Math.abs(b.edge || 0) - Math.abs(a.edge || 0));
+    grp.primary = grp.items[0];
+    grp.state = grp.primary.state;
+    grp.count = grp.items.length;
+    grp.weight = Math.min(Math.abs(grp.primary.edge || 0) / 0.3, 1);
+  }
+  return g;
+}
+
+function renderGlobe(feed) {
+  GROUPS = groupBoard(feed);
+  const markers = Object.values(GROUPS).map((g) => ({
+    lat: g.lat, lon: g.lon, place: g.place, state: g.state, weight: g.weight, count: g.count,
+  }));
+  window.OTGlobe && OTGlobe.setMarkers(markers);
+  window.OTGlobe && OTGlobe.setTemps(feed.temperature || null);
+
+  const total = ((feed.board && feed.board.markets) || []).length;
+  const ours = markers.filter((m) => m.state !== "market").length;
+  const cap = $('[data-f="globe.caption"]');
+  if (cap) cap.textContent = total
+    ? `${plural(total, "market")} · ${plural(ours, "live edge")} · ${plural(markers.length, "city", "cities")}`
+    : "no markets yet";
+
+  const tsrc = $('[data-f="temperature.source"]');
+  const legend = document.querySelector(".templegend");
+  if (feed.temperature) {
+    if (tsrc) tsrc.textContent = `current temp · ${ago(feed.temperature.as_of)} · Open-Meteo`;
+    if (legend) legend.style.display = "";
+  } else if (legend) { legend.style.display = "none"; }
+}
+
+function globeTip(m, x, y) {
+  const tip = $("#globe-tip");
+  if (!tip) return;
+  if (!m) { tip.hidden = true; return; }
+  const g = GROUPS[m.place] || { items: [m], primary: m };
+  const p = g.primary;
+  tip.textContent = "";
+  tip.append(el("b", null, m.place));
+  const line = STATE_LABEL[p.state] + (p.mid != null ? ` · mkt ${cents(p.mid)}` : "") +
+    (p.edge != null ? ` · edge ${cents(Math.abs(p.edge))}` : "");
+  tip.append(el("span", "tip-detail", line), el("span", "tip-q", p.question));
+  tip.append(el("span", "tip-more", g.items.length > 1
+    ? `${g.items.length} markets here · click to see all` : "click for detail"));
+  tip.hidden = false;
+  const band = tip.parentElement.getBoundingClientRect();
+  tip.style.left = Math.max(10, Math.min(x + 16, band.width - 300)) + "px";
+  tip.style.top = Math.max(10, Math.min(y - tip.offsetHeight / 2, band.height - tip.offsetHeight - 12)) + "px";
+}
+
+/* --- click a place → all its markets, book + our analysis, history included -- */
+function kv(k, v) { const w = el("div", "detail-kv"); w.append(el("dt", null, k), el("dd", null, v)); return w; }
+
+function cityItem(m, open) {
+  const it = el("details", "citem"); if (open) it.open = true;
+  const sum = el("summary", "citem-head");
+  const badge = el("span", "detail-badge", STATE_LABEL[m.state]); badge.dataset.s = m.state;
+  sum.append(badge, el("span", "citem-q", m.question),
+             el("span", "citem-mkt", m.mid != null ? cents(m.mid) : "—"));
+  it.append(sum);
+
+  const body = el("div", "citem-body");
+  const book = el("div", "detail-book");
+  if (m.yes_bid != null && m.yes_ask != null) book.append(kv("Bid / ask", `${cents(m.yes_bid)} / ${cents(m.yes_ask)}`));
+  if (m.volume) book.append(kv("Volume 24h", money(m.volume)));
+  if (m.close) book.append(kv("Closes", stamp(m.close)));
+  if (book.children.length) body.append(book);
+
+  if (m.state !== "market") {
+    const our = el("div", "detail-our");
+    const g = el("div", "detail-book");
+    if (m.p_model != null) g.append(kv("Our P(YES)", (m.p_model * 100).toFixed(0) + "%"));
+    if (m.edge != null) g.append(kv("Edge", cents(Math.abs(m.edge)) + (m.side ? ` · buy ${m.side}` : "")));
+    if (m.outcome) { const dd = kv("Resolved", `${m.outcome.toUpperCase()} · ${signed(m.pnl || 0)}`);
+      if ((m.pnl || 0) < 0) dd.querySelector("dd").classList.add("down"); g.append(dd); }
+    if (g.children.length) our.append(g);
+    if (m.why) our.append(el("p", "detail-why", m.why));
+    if (m.reasoning) our.append(el("p", "detail-reason", m.reasoning));
+    if (our.children.length) body.append(our);
+  }
+  it.append(body);
+  return it;
+}
+
+function openDetail(marker) {
+  const box = $("#detail");
+  const g = GROUPS[marker && marker.place];
+  if (!box || !g) return;
+  box.textContent = "";
+  const x = el("button", "detail-x", "✕"); x.setAttribute("aria-label", "Close");
+  x.addEventListener("click", closeDetail);
+  box.append(x, el("div", "detail-city", g.place));
+
+  const live = g.items.filter((i) => i.state === "held" || i.state === "pending").length;
+  const settled = g.items.filter((i) => i.state === "won" || i.state === "lost").length;
+  const parts = [plural(g.items.length, "market")];
+  if (live) parts.push(`${live} live`);
+  if (settled) parts.push(`${settled} settled`);
+  box.append(el("div", "detail-citysub", parts.join(" · ") + " on the venue"));
+
+  const list = el("div", "detail-list");
+  g.items.forEach((it, i) => list.append(cityItem(it, i === 0 && it.state !== "market")));
+  box.append(list);
+  box.hidden = false;
+  requestAnimationFrame(() => box.classList.add("open"));
+}
+function closeDetail() { const b = $("#detail"); if (b) { b.classList.remove("open"); b.hidden = true; } }
+
+function tickLive() {
+  const stale = LIVE.lastCycle
+    ? (Date.now() - new Date(LIVE.lastCycle)) / 60000 > LIVE.cycleMax
+    : true;
+  const live = $('[data-f="status.live"]');
+  if (live) live.textContent = stale ? "idle" : "live";
+  const upd = $('[data-f="status.updated"]');
+  if (upd) upd.innerHTML = LIVE.lastCycle
+    ? "updated " + ago(LIVE.lastCycle) : "no cycle yet";
+  $("#strip") && $("#strip").classList.toggle("is-stale", stale);
+  $("#globe") && $("#globe").classList.toggle("is-stale", stale);
 }
 
 /* --- chrome ------------------------------------------------------------------- */
@@ -360,6 +530,12 @@ function renderChrome(feed) {
   set("performance.as_of_rel", p.as_of ? "cycle " + ago(p.as_of) : "no cycles yet");
   set("performance.account_value", money(p.account_value));
   set("generated_at", stamp(feed.generated_at));
+
+  // Token spend, next to the money — updated on every feed, all-time and this run.
+  const c = feed.compute;
+  const sess = (c.session && c.session.total) || c.total;
+  set("compute.total_tokens", tokens(c.total.total_tokens));
+  set("compute.session_tokens", tokens(sess.total_tokens));
 
   // The model gets a link when its weights are public — which, for an agent
   // arguing that the crowd is wrong, is the difference between a claim and a
@@ -397,18 +573,23 @@ function renderChrome(feed) {
   }
 }
 
-async function main() {
-  let feed;
+/* --- feed loading + the live loop -------------------------------------------
+   The page reloads the feed on its own so it stays current without a manual
+   refresh, and drives the 3D field from the agent's state: warmth follows the
+   return, and a ripple fires whenever the cycle counter advances. */
+let SEEN = { generated: null, cycles: null };
+
+async function fetchFeed() {
   try {
     const resp = await fetch("feed.json", { cache: "no-store" });
     if (!resp.ok) throw new Error(resp.status);
-    feed = await resp.json();
+    return await resp.json();
   } catch (err) {
-    $("#hero-slot").textContent = "";
-    $("#hero-slot").append(el("p", "empty",
-      "The feed did not load. The agent keeps trading either way — reload, or read feed.json directly."));
-    return;
+    return null;
   }
+}
+
+function applyFeed(feed) {
   renderChrome(feed);
   renderHero(feed);
   renderCurve(feed);
@@ -418,6 +599,33 @@ async function main() {
   renderTrack(feed);
   renderRsi(feed);
   renderCompute(feed);
+  renderLive(feed);
+  renderGlobe(feed);
+  SEEN.generated = feed.generated_at;
+}
+
+async function main() {
+  window.OTStars && OTStars.init("stars");
+  window.OTGlobe && OTGlobe.init("globe-canvas", {
+    onHover: globeTip,
+    onSelect: (m) => { openDetail(m); window.OTGlobe.focus(m.lon, m.lat); },
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDetail(); });
+
+  const feed = await fetchFeed();
+  if (!feed) {
+    $("#hero-slot").textContent = "";
+    $("#hero-slot").append(el("p", "empty",
+      "The feed did not load. The agent keeps trading either way — reload, or read feed.json directly."));
+    return;
+  }
+  applyFeed(feed);
+
+  setInterval(tickLive, 1000);                 // the "updated Ns ago" counter climbs live
+  setInterval(async () => {                    // pull fresh data without a reload
+    const f = await fetchFeed();
+    if (f && f.generated_at !== SEEN.generated) applyFeed(f);
+  }, 45000);
 }
 
 main();

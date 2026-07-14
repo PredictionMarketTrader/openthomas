@@ -12,14 +12,25 @@
              font-weight: 300 700; font-display: swap; }
 
 :root {
-  --ink:     #0d141a;
-  --panel:   #151e26;
-  --rule:    #26333d;
-  --vapor:   #93a4b0;
-  --paper:   #e9eff3;
-  --mercury: #e8703a;
-  --frost:   #5fb3d9;
-  --ember:   #c0554b;
+  /* The agent works from orbit: a blue planet in deep space. Surfaces are dark
+     panels that float on the starfield; the market-vs-agent accent runs cool→warm
+     (cyan → amber); wins green, losses red. Semantic names carry over: --ink is
+     the raised (dark) surface, --paper the light ink on it. */
+  --sky:     #05070e;   /* deep space — the page */
+  --sky-2:   #0a0f1c;   /* a lighter wash of space */
+  --ink:     #0d131f;   /* raised surfaces: cards, stats, the sticky strip */
+  --panel:   #121a29;   /* a second surface */
+  --rule:    #212c3e;   /* hairlines and the 1px grid gaps */
+  --vapor:   #8b96ab;   /* secondary text — muted, AA on space and panels */
+  --paper:   #e8ecf4;   /* primary text — near white */
+  --mercury: #f0803a;   /* what the agent believes (warm) — bright on dark */
+  --mercury-hi: #ffa15c;/* brighter still, for graphics */
+  --frost:   #56aae0;   /* what the market believes (cool) */
+  --frost-hi: #7cc4f0;  /* brighter, for graphics */
+  --ember:   #ec5a44;   /* money actually given back */
+  --gain:    #46c882;   /* a resolved win */
+
+  --shadow: 0 1px 0 rgba(255,255,255,.03), 0 22px 48px -26px rgba(0,0,0,.7);
 
   --mono: "Plex Mono", ui-monospace, "SF Mono", "Cascadia Mono", monospace;
   --serif: "Source Serif", "Iowan Old Style", Palatino, Charter, serif;
@@ -35,12 +46,17 @@ html { -webkit-text-size-adjust: 100%; }
 
 body {
   margin: 0;
-  background: var(--ink);
+  background: radial-gradient(120% 90% at 50% 0%, #0a1020, var(--sky) 70%);
   color: var(--paper);
   font: 400 16px/1.6 var(--mono);
   font-feature-settings: "ss01";
   -webkit-font-smoothing: antialiased;
 }
+
+/* The starfield sits behind everything, fixed, painted once by globe.js. */
+#stars { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0;
+         pointer-events: none; }
+.strip, .planet, #main, .foot, .detail { position: relative; z-index: 1; }
 
 a { color: inherit; text-decoration-color: var(--rule); text-underline-offset: 3px; }
 a:hover { text-decoration-color: var(--mercury); }
@@ -70,30 +86,33 @@ a:hover { text-decoration-color: var(--mercury); }
          animation: pulse 2.6s ease-out infinite; }
 @keyframes pulse { 70%, 100% { box-shadow: 0 0 0 7px transparent; } }
 
-/* --- masthead ---------------------------------------------------------------- */
+/* --- the planet hero: a full-bleed globe with overlaid chrome ---------------- */
 main { max-width: var(--wide); margin: 0 auto; padding: 0 var(--gut); }
 
-.mast {
-  display: flex; flex-wrap: wrap; gap: 32px; justify-content: space-between;
-  align-items: flex-end; padding: clamp(48px, 9vw, 104px) 0 clamp(40px, 6vw, 64px);
-}
-.mast-id { max-width: 34em; }
-h1 {
-  font: 600 clamp(34px, 5.4vw, 60px)/1 var(--mono);
-  letter-spacing: -.045em; margin: 0 0 20px;
-}
-.mast-sub { font: 400 clamp(16px, 1.5vw, 19px)/1.62 var(--serif); color: var(--vapor);
-            margin: 0; max-width: 30em; text-wrap: pretty; }
-.mast-sub em { color: var(--paper); font-style: italic; }
-.mast-links { display: flex; gap: 26px; flex-wrap: wrap; margin-top: 24px;
-              font-size: var(--lab); letter-spacing: .16em; text-transform: uppercase; }
-.mast-links a { color: var(--vapor); }
-.mast-links a:hover { color: var(--paper); }
+.planet { height: 100svh; min-height: 560px; overflow: hidden; }
+#globe-canvas { position: absolute; inset: 0; width: 100%; height: 100%;
+                touch-action: none; display: block; }
+/* Overlays float over the planet and never eat its drag — only their links do. */
+.planet-head, .planet-value, .globe-legend, .globe-foot, .scrollcue { pointer-events: none; }
+.planet-head a, .planet-value a { pointer-events: auto; }
 
-.mast-value { text-align: right; }
-.mast-num { font: 500 clamp(28px, 3.6vw, 40px)/1 var(--mono); letter-spacing: -.035em;
+.planet-head { position: absolute; top: clamp(56px, 9vh, 96px); left: var(--gut);
+               max-width: min(30em, 60vw); z-index: 2; }
+h1 { font: 600 clamp(30px, 5vw, 54px)/1 var(--mono); letter-spacing: -.045em; margin: 0 0 16px;
+     text-shadow: 0 2px 20px rgba(0,0,0,.6); }
+.planet-sub { font: 400 clamp(14px, 1.4vw, 17px)/1.6 var(--serif); color: var(--paper);
+              margin: 0; max-width: 30em; text-wrap: pretty; text-shadow: 0 1px 14px rgba(0,0,0,.7); }
+.planet-sub em { color: var(--frost-hi); font-style: italic; }
+.planet-links { display: flex; gap: 22px; flex-wrap: wrap; margin-top: 20px;
+                font-size: var(--lab); letter-spacing: .16em; text-transform: uppercase; }
+.planet-links a { color: var(--vapor); }
+.planet-links a:hover { color: var(--paper); }
+
+.planet-value { position: absolute; top: clamp(56px, 9vh, 96px); right: var(--gut);
+                text-align: right; z-index: 2; text-shadow: 0 1px 14px rgba(0,0,0,.7); }
+.mast-num { font: 500 clamp(26px, 3.4vw, 38px)/1 var(--mono); letter-spacing: -.035em;
             font-variant-numeric: tabular-nums; }
-.mast-delta { margin-top: 10px; font-size: var(--lab); letter-spacing: .14em;
+.mast-delta { margin-top: 9px; font-size: var(--lab); letter-spacing: .14em;
               text-transform: uppercase; color: var(--vapor); }
 .mast-delta .down { color: var(--ember); }
 
@@ -300,8 +319,162 @@ h1 {
   .ledger, .two-up { grid-template-columns: 1fr; }
   .mast { align-items: flex-start; }
   .mast-value { text-align: left; }
+  .mast-tokens { justify-content: flex-start; }
   .cards { grid-template-columns: 1fr; }
   .cycle { grid-template-columns: 1fr; gap: 8px; }
   .claim-row { grid-template-columns: 1fr; gap: 4px; }
   .claim-row[data-k="wrong"] .claim-v { margin-left: 0; }
 }
+
+/* ============================================================================
+   LIGHT-BUILD ADDITIONS
+   Surfaces lift off the sky with a soft shadow; the page's one loud, moving
+   thing is the temperature field. Everything else stays quiet and legible.
+   ========================================================================= */
+
+.stats, .cards, .tokens, .gen, .field { box-shadow: var(--shadow); }
+.strip { box-shadow: 0 1px 0 var(--rule); }
+
+/* --- live strip: the agent's pulse, always on screen ------------------------ */
+.strip-live { color: var(--mercury); font-weight: 500; letter-spacing: .18em; }
+.strip.is-stale .strip-live { color: var(--vapor); }
+.strip.is-stale .pulse { animation: none; background: var(--vapor); }
+.strip-ago { margin-left: auto; color: var(--vapor); font-variant-numeric: tabular-nums;
+             text-decoration: none; }
+.strip-ago b { color: var(--paper); font-weight: 500; }
+.strip-feed { margin-left: 18px; }
+
+/* --- planet chrome: legend, caption, hover tip, detail drawer --------------- */
+.mast-tokens { display: flex; gap: 22px; margin: 16px 0 0; padding: 0; justify-content: flex-end; }
+.mast-tokens > div { text-align: right; }
+.mast-tokens dt { font-size: var(--lab); letter-spacing: .14em; text-transform: uppercase; color: var(--vapor); }
+.mast-tokens dd { margin: 6px 0 0; font: 500 18px/1 var(--mono); letter-spacing: -.02em;
+                  font-variant-numeric: tabular-nums; }
+.mast-tokens .tok-run { color: var(--mercury); }
+
+.globe-legend { position: absolute; right: var(--gut); bottom: clamp(58px, 12vh, 92px); z-index: 2;
+                display: flex; gap: 8px 16px; flex-wrap: wrap; max-width: 60%; justify-content: flex-end;
+                font-size: var(--lab); letter-spacing: .13em; text-transform: uppercase; color: var(--vapor); }
+.globe-legend .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block;
+                     margin-right: 7px; vertical-align: middle; border: 1.5px solid transparent; }
+.dot-market  { background: rgba(158,200,238,.55); }
+.dot-pending { background: #ffffff; border-color: #f0803a; }
+.dot-held { background: #f0803a; border-color: #8f3f0e; }
+.dot-won { background: #46c882; border-color: #187048; }
+.dot-lost { background: #ec5a44; border-color: #93291d; }
+
+.globe-foot { position: absolute; left: var(--gut); bottom: clamp(52px, 11vh, 84px); z-index: 2;
+              display: flex; flex-direction: column; gap: 8px;
+              font-size: var(--lab); letter-spacing: .13em; text-transform: uppercase; }
+.globe-cap { display: flex; align-items: center; gap: 8px; color: var(--paper); }
+.globe-hint { color: color-mix(in srgb, var(--vapor) 82%, transparent); }
+.templegend { display: flex; align-items: center; gap: 8px; color: var(--vapor);
+              text-transform: none; letter-spacing: .04em; }
+.tl-bar { width: 130px; height: 7px; border-radius: 4px; display: inline-block;
+          background: linear-gradient(90deg, #2e56c4 0%, #3a96d6 22%, #5cc4ce 42%,
+            #cee0d6 57%, #eeb04a 70%, #e25c32 84%, #9e1a1a 100%); }
+.tl-lab { font-variant-numeric: tabular-nums; }
+.tl-src { margin-left: 6px; color: color-mix(in srgb, var(--vapor) 75%, transparent); }
+.field-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--mercury); flex: none;
+             box-shadow: 0 0 0 0 color-mix(in srgb, var(--mercury) 60%, transparent);
+             animation: pulse 2.6s ease-out infinite; }
+.globe.is-stale .field-dot { animation: none; background: var(--vapor); }
+.scrollcue { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 2;
+             font-size: var(--lab); letter-spacing: .2em; text-transform: uppercase; color: var(--vapor);
+             animation: bob 2.4s ease-in-out infinite; }
+@keyframes bob { 50% { transform: translate(-50%, 6px); } }
+
+.globe-tip { position: absolute; z-index: 3; max-width: 290px; pointer-events: none;
+             background: color-mix(in srgb, var(--ink) 92%, transparent); backdrop-filter: blur(8px);
+             border: 1px solid var(--rule); box-shadow: var(--shadow); padding: 10px 12px; }
+.globe-tip b { display: block; color: var(--paper); font: 500 13px/1.2 var(--mono);
+               letter-spacing: -.01em; margin-bottom: 5px; }
+.globe-tip .tip-detail { display: block; font: 500 12px/1.3 var(--mono); color: var(--frost-hi);
+                         font-variant-numeric: tabular-nums; }
+.globe-tip .tip-q { display: block; margin-top: 6px; font: 400 12px/1.45 var(--serif); color: var(--vapor);
+                    text-wrap: pretty; }
+.globe-tip .tip-more { display: block; margin-top: 7px; font-size: 9.5px; letter-spacing: .16em;
+                       text-transform: uppercase; color: var(--mercury); }
+
+.globe-fallback { display: none; }
+.planet.no-gl { height: auto; min-height: 0; padding: clamp(40px,10vw,90px) var(--gut); }
+.planet.no-gl #globe-canvas, .planet.no-gl .globe-legend, .planet.no-gl .globe-foot,
+.planet.no-gl .scrollcue, .planet.no-gl .planet-value { display: none; }
+.planet.no-gl .planet-head { position: static; max-width: 44em; }
+.planet.no-gl .globe-fallback { display: block; margin-top: 22px;
+  font: 400 15px/1.6 var(--serif); color: var(--vapor); max-width: 58ch; }
+
+/* --- the detail drawer: one market's book + our analysis -------------------- */
+.detail { position: fixed; top: 0; right: 0; z-index: 40; width: min(440px, 92vw); height: 100svh;
+          overflow-y: auto; background: color-mix(in srgb, var(--ink) 96%, transparent);
+          backdrop-filter: blur(12px); border-left: 1px solid var(--rule);
+          box-shadow: -30px 0 60px -30px rgba(0,0,0,.7); padding: clamp(26px, 4vw, 40px);
+          transform: translateX(100%); transition: transform .32s cubic-bezier(.2,.8,.2,1); }
+.detail.open { transform: none; }
+.detail-x { position: absolute; top: 16px; right: 16px; width: 32px; height: 32px; cursor: pointer;
+            background: none; border: 1px solid var(--rule); color: var(--vapor); font-size: 14px;
+            line-height: 1; border-radius: 2px; }
+.detail-x:hover { color: var(--paper); border-color: var(--vapor); }
+.detail-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 16px;
+               font-size: var(--lab); letter-spacing: .13em; text-transform: uppercase; color: var(--vapor); }
+.detail-badge { border: 1px solid var(--rule); padding: 3px 8px; }
+.detail-badge[data-s="pending"] { color: var(--mercury); border-color: color-mix(in srgb, var(--mercury) 50%, transparent); }
+.detail-badge[data-s="held"] { color: var(--mercury-hi); border-color: color-mix(in srgb, var(--mercury) 55%, transparent); }
+.detail-badge[data-s="won"] { color: var(--gain); border-color: color-mix(in srgb, var(--gain) 50%, transparent); }
+.detail-badge[data-s="lost"] { color: var(--ember); border-color: color-mix(in srgb, var(--ember) 50%, transparent); }
+.detail-badge[data-s="market"] { color: var(--frost); border-color: color-mix(in srgb, var(--frost) 50%, transparent); }
+.detail-q { font: 400 clamp(18px,2.4vw,22px)/1.4 var(--serif); margin: 0 0 22px; text-wrap: pretty; }
+.detail-book { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--rule);
+               border: 1px solid var(--rule); margin-bottom: 22px; }
+.detail-kv { background: var(--ink); padding: 12px 14px; }
+.detail-kv dt { font-size: var(--lab); letter-spacing: .13em; text-transform: uppercase; color: var(--vapor); }
+.detail-kv dd { margin: 6px 0 0; font: 500 17px/1 var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.detail-kv dd.down { color: var(--ember); }
+.detail-lab { font-size: var(--lab); letter-spacing: .16em; text-transform: uppercase; color: var(--mercury); margin-bottom: 12px; }
+.detail-our { border-top: 1px solid var(--rule); padding-top: 22px; }
+.detail-why { font: 400 15px/1.6 var(--serif); margin: 6px 0 0; text-wrap: pretty; }
+.detail-reason { font: 400 14px/1.62 var(--serif); color: var(--vapor); margin: 14px 0 0;
+                 border-left: 2px solid var(--rule); padding-left: 14px; text-wrap: pretty; }
+
+/* city view: a place and all its markets, each expandable (history included) */
+.detail-city { font: 600 clamp(22px,3vw,30px)/1 var(--mono); letter-spacing: -.03em; margin: 4px 0 8px; }
+.detail-citysub { font-size: var(--lab); letter-spacing: .14em; text-transform: uppercase;
+                  color: var(--vapor); margin-bottom: 22px; }
+.detail-list { display: flex; flex-direction: column; }
+.citem { border-top: 1px solid var(--rule); }
+.citem:last-child { border-bottom: 1px solid var(--rule); }
+.citem-head { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: baseline;
+              padding: 14px 24px 14px 0; cursor: pointer; list-style: none; position: relative; }
+.citem-head::-webkit-details-marker { display: none; }
+.citem-head::after { content: "+"; position: absolute; right: 2px; top: 13px; color: var(--vapor);
+                     font-family: var(--mono); }
+.citem[open] .citem-head::after { content: "–"; }
+.citem-q { font: 400 15px/1.4 var(--serif); text-wrap: pretty; }
+.citem-mkt { font: 500 14px/1 var(--mono); font-variant-numeric: tabular-nums; color: var(--vapor); }
+.citem-body { padding: 0 0 18px; }
+.citem-body .detail-book { margin-bottom: 14px; }
+.citem-body .detail-our { border-top: none; padding-top: 0; }
+.detail-badge[data-s] { font-size: 9px; padding: 2px 6px; }
+
+@media (max-width: 620px) {
+  .planet-head { max-width: 74vw; }
+  .planet-value { top: auto; bottom: clamp(120px, 22vh, 180px); left: var(--gut); right: auto; text-align: left; }
+  .mast-tokens { justify-content: flex-start; }
+  .globe-legend { max-width: 88%; }
+}
+
+/* --- compute: total vs this run --------------------------------------------- */
+.tok-split { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--rule);
+             border: 1px solid var(--rule); box-shadow: var(--shadow); margin-bottom: 30px; }
+.tok-col { background: var(--ink); padding: 20px 22px; }
+.tok-col h4 { margin: 0 0 16px; font: 500 var(--lab)/1 var(--mono); letter-spacing: .16em;
+              text-transform: uppercase; color: var(--vapor); display: flex; gap: 8px; align-items: center; }
+.tok-col.run h4 { color: var(--mercury); }
+.tok-col .tok-big { font: 500 clamp(26px, 3.4vw, 34px)/1 var(--mono); letter-spacing: -.03em;
+                    font-variant-numeric: tabular-nums; }
+.tok-col.run .tok-big { color: var(--mercury); }
+.tok-col .tok-unit { font-size: 13px; color: var(--vapor); margin-left: 6px; letter-spacing: 0; }
+.tok-meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 14px;
+            font-size: 13px; color: var(--vapor); font-variant-numeric: tabular-nums; }
+.tok-meta b { color: var(--paper); font-weight: 500; }
+@media (max-width: 620px) { .tok-split { grid-template-columns: 1fr; } }
