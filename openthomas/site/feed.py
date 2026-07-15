@@ -301,9 +301,11 @@ def _skill(journal: Journal, settings: Settings) -> list[dict]:
     by_station: dict[str, dict] = {}
     for b in weather_skill(journal):
         s = by_station.setdefault(b["station"], {"n": 0, "sm": 0.0, "nk": 0, "smk": 0.0})
-        s["n"] += b["n"]; s["sm"] += b["brier_model"] * b["n"]
+        s["n"] += b["n"]
+        s["sm"] += b["brier_model"] * b["n"]
         if b["brier_market"] is not None:
-            s["nk"] += b["n"]; s["smk"] += b["brier_market"] * b["n"]
+            s["nk"] += b["n"]
+            s["smk"] += b["brier_market"] * b["n"]
     for key, s in by_station.items():
         st = STATIONS[key]
         c = cell(st.name.split(",")[0], st.lat, st.lon)

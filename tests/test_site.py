@@ -234,7 +234,8 @@ def test_theses_carry_a_location_and_keep_the_ticker_private(settings):
     ticker resolves to a settlement station — so the globe can pin it. The
     ticker is used to look up coords but never ships."""
     j = Journal(settings.db_path)
-    f = Forecast(); f.market_id = "KXHIGHCHI-26JUL14-T94"  # Chicago Midway series
+    f = Forecast()
+    f.market_id = "KXHIGHCHI-26JUL14-T94"  # Chicago Midway series
     m = Market(id=f.market_id, platform="kalshi",
                question="Will the high be 94-95° tomorrow?",
                category="climate/weather", yes_bid=0.39, yes_ask=0.41)
@@ -270,7 +271,8 @@ def test_board_plots_the_whole_book_with_our_view_joined(settings):
 
     # now record a forecast with a big edge → it becomes a 'pending' pin with analysis
     j = Journal(settings.db_path)
-    f = Forecast(); f.market_id = m.id
+    f = Forecast()
+    f.market_id = m.id
     j.record_forecast(f, m)
     row = next(r for r in build_feed(settings, j)["board"]["markets"] if r["state"] == "pending")
     assert row["reasoning"] and row["edge"] is not None
@@ -303,7 +305,8 @@ def test_skill_maps_disagreement_and_the_settled_verdict_per_city(settings):
     place (data-rich); the settled skill/win verdict is added once markets
     resolve there."""
     j = Journal(settings.db_path)
-    f = Forecast(); f.market_id = "KXHIGHCHI-26JUL14-T94"   # Chicago Midway series
+    f = Forecast()
+    f.market_id = "KXHIGHCHI-26JUL14-T94"   # Chicago Midway series
     m = market(mid=0.40, market_id=f.market_id)
     j.record_forecast(f, m)
     chi = next(c for c in build_feed(settings, j)["skill"] if c["place"].startswith("Chicago"))

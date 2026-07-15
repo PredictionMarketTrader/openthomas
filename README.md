@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="OpenThomas" width="132" height="132">
+</p>
+
 # OpenThomas — the weather trader for prediction markets
 
 [![PyPI](https://img.shields.io/pypi/v/openthomas)](https://pypi.org/project/openthomas/) [![CI](https://github.com/PredictionMarketTrader/openthomas/actions/workflows/ci.yml/badge.svg)](https://github.com/PredictionMarketTrader/openthomas/actions) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://pypi.org/project/openthomas/)

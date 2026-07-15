@@ -25,8 +25,8 @@ MODE="${2--gpu}"     # GPU by default; pass "" for CPU (${2-} keeps an explicit
 # honours GPU-UUID strings, which survive index reshuffles and other tenants).
 # Set OPENTHOMAS_GPU_UUID in the private env above; empty means "use device 0".
 # The GPU pin is host-specific — nwp.env holds the primary box's UUID, which is
-# wrong on a single-GPU box like t4090. OPENTHOMAS_GPU_UUID_OVERRIDE (even empty)
-# wins over nwp.env, so `OPENTHOMAS_GPU_UUID_OVERRIDE= run_remote.sh t4090 --gpu`
+# wrong on a single-GPU box. OPENTHOMAS_GPU_UUID_OVERRIDE (even empty)
+# wins over nwp.env, so `OPENTHOMAS_GPU_UUID_OVERRIDE= run_remote.sh HOST --gpu`
 # runs on that box's only card.
 if [ -n "${OPENTHOMAS_GPU_UUID_OVERRIDE+x}" ]; then
   GPU_UUID="$OPENTHOMAS_GPU_UUID_OVERRIDE"
