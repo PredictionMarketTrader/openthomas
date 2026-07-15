@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.png" alt="OpenThomas" width="132" height="132">
+  <img src="assets/thomasbayes.png" alt="OpenThomas — named for Thomas Bayes" width="200">
 </p>
 
 # OpenThomas — the weather trader for prediction markets
