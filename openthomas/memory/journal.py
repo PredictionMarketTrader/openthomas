@@ -193,6 +193,13 @@ class Journal:
         rows = self.db.execute("SELECT ts, account_value FROM cycles ORDER BY ts").fetchall()
         return [(r["ts"], r["account_value"]) for r in rows]
 
+    def cycle_series(self) -> list[tuple[str, float, float]]:
+        """(ts, account_value, cash) per cycle — the source for the P&L trend
+        (value − bankroll) and the positions-value trend (value − cash)."""
+        rows = self.db.execute(
+            "SELECT ts, account_value, cash FROM cycles ORDER BY ts").fetchall()
+        return [(r["ts"], r["account_value"], r["cash"]) for r in rows]
+
     def recent_settlements(self, limit: int = 20) -> list[dict]:
         rows = self.db.execute(
             "SELECT * FROM settlements ORDER BY ts DESC LIMIT ?", (limit,)

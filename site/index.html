@@ -14,175 +14,231 @@
 <link rel="preload" href="fonts/sourceserif4-var.woff2" as="font" type="font/woff2" crossorigin>
 <!-- Bump ?v on every deploy: assets are cached 5 min, index.html is no-cache, so a
      new version query busts the stale JS/CSS the moment the new HTML loads. -->
-<link rel="stylesheet" href="style.css?v=t12">
+<link rel="stylesheet" href="style.css?v=t13">
 </head>
 <body>
 
 <canvas id="stars" aria-hidden="true"></canvas>
 
-<div class="strip" role="status" id="strip">
-  <div class="strip-in">
-    <span class="pulse" aria-hidden="true"></span>
-    <span class="strip-live" data-f="status.live">live</span>
-    <span class="strip-sep" aria-hidden="true">/</span>
-    <span data-f="agent.mode_chip">paper trading</span>
-    <span class="strip-sep" aria-hidden="true">/</span>
-    <span data-f="status.cycle">cycle —</span>
-    <a class="strip-ago" href="feed.json" data-f="status.updated">updated —</a>
-    <a class="strip-feed" href="feed.json">feed.json</a>
-    <nav class="strip-links" aria-label="Open source">
-      <a class="strip-icon" href="https://github.com/PredictionMarketTrader/openthomas"
+<!-- Top nav: the site is a set of pages now, not one scroll. Links are hash
+     routes so the static host needs no rewrite rules; app.js shows one view. -->
+<header class="nav" id="nav">
+  <div class="nav-in">
+    <a class="nav-brand" href="#/">OpenThomas</a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="#/" data-route="home">Home</a>
+      <a href="#/positions" data-route="positions">Positions</a>
+      <a href="#/activity" data-route="activity">Activity</a>
+      <a href="#/daily" data-route="daily">Daily report</a>
+      <a href="#/blog" data-route="blog">Blog</a>
+      <a href="#/system" data-route="system">System</a>
+    </nav>
+    <div class="nav-right">
+      <a class="nav-icon" href="https://github.com/PredictionMarketTrader/openthomas"
          rel="noopener" aria-label="Source code on GitHub" title="Source code on GitHub">
         <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.65 7.65 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
       </a>
-      <a class="strip-icon strip-icon-hf" href="https://huggingface.co/openthomas"
+      <a class="nav-icon nav-icon-hf" href="https://huggingface.co/openthomas"
          rel="noopener" aria-label="Open models &amp; datasets on Hugging Face"
          title="Open models &amp; datasets on Hugging Face"><span aria-hidden="true">🤗</span></a>
-    </nav>
-  </div>
-</div>
-
-<!-- The planet is the page: a blue Earth in space, every weather market pinned
-     where its weather is. Faint dots are the whole book; glowing pins are ours. -->
-<section class="planet" id="globe" aria-label="Live weather markets">
-  <canvas id="globe-canvas"></canvas>
-
-  <div class="planet-head">
-    <h1>OpenThomas</h1>
-    <p class="planet-sub">An autonomous agent forecasting station temperatures and trading
-      them on Kalshi and Polymarket. Every market it watches is on this globe; every claim
-      was published <em>before</em> it settled.</p>
-    <nav class="planet-links" aria-label="Source">
-      <a href="https://github.com/PredictionMarketTrader/openthomas" rel="noopener">Source</a>
-      <a href="https://huggingface.co/openthomas" rel="noopener">Models &amp; data</a>
-      <a href="feed.json">feed.json</a>
-    </nav>
-  </div>
-
-  <div class="planet-value">
-    <div class="mast-num" data-f="performance.account_value">—</div>
-    <div class="mast-delta" data-f="performance.return_line">—</div>
-    <dl class="mast-tokens">
-      <div><dt>Tokens · all&#8209;time</dt><dd data-f="compute.total_tokens">—</dd></div>
-      <div><dt>Tokens · this run</dt><dd class="tok-run" data-f="compute.session_tokens">—</dd></div>
-    </dl>
-  </div>
-
-  <div class="lenses" role="tablist" aria-label="Globe view">
-    <button class="lens on" data-lens="temp" role="tab">Temperature</button>
-    <button class="lens" data-lens="edge" role="tab">Edges</button>
-    <button class="lens" data-lens="skill" role="tab">Disagreement</button>
-    <button class="lens" data-lens="anomaly" role="tab">Anomaly</button>
-  </div>
-
-  <aside class="opprail" id="opprail" hidden aria-label="Rail">
-    <div class="opprail-h"><span class="rail-title">Where the edges are</span>
-      <span class="opprail-n" data-f="opp.count"></span></div>
-    <div class="opprail-list" id="opprail-list"></div>
-    <p class="opprail-foot">Ranked by edge × liquidity × time to close. Click to fly there.</p>
-  </aside>
-
-  <div class="globe-legend" aria-hidden="true">
-    <span><i class="dot dot-market"></i>market</span>
-    <span><i class="dot dot-pending"></i>edge found</span>
-    <span><i class="dot dot-held"></i>bet placed</span>
-    <span><i class="dot dot-won"></i>won</span>
-    <span><i class="dot dot-lost"></i>lost</span>
-  </div>
-
-  <div class="globe-foot">
-    <span class="globe-cap"><span class="field-dot" aria-hidden="true"></span><span data-f="globe.caption">plotting markets…</span></span>
-    <div class="templegend" aria-hidden="true">
-      <span class="tl-lab">≤ −25°</span>
-      <span class="tl-bar"></span>
-      <span class="tl-lab">≥ 44°C</span>
-      <span class="tl-src" data-f="temperature.source">current global temperature</span>
     </div>
-    <span class="globe-hint">drag to spin · scroll to zoom · click a market</span>
   </div>
+</header>
 
-  <div class="timeaxis" id="timeaxis" hidden>
-    <button class="ta-play" id="ta-play" aria-label="Play the forecast">▶</button>
-    <input class="ta-slider" id="ta-slider" type="range" min="0" max="6" value="0" step="1"
-           aria-label="Forecast lead time">
-    <span class="ta-label" id="ta-label">now</span>
-    <span class="ta-src">our GraphCast forecast</span>
-  </div>
+<main id="app">
 
-  <div class="globe-tip" id="globe-tip" role="status" hidden></div>
-  <p class="globe-fallback">The globe needs a canvas-capable browser. Every market is in
-    <a href="feed.json">feed.json</a>, and the claims below.</p>
-  <div class="scrollcue" aria-hidden="true">the desk ↓</div>
-</section>
+  <!-- HOME: one screen, no scroll. The two trends a Polymarket profile leads with
+       (P&L and positions value) beside a globe wearing the world's temperature. -->
+  <section class="view view-home" data-view="home">
+    <div class="home-grid">
+      <aside class="home-panel">
+        <div class="home-value">
+          <div class="mast-num" data-f="performance.account_value">—</div>
+          <div class="mast-delta" data-f="performance.return_line">—</div>
+        </div>
+        <div class="home-charts">
+          <figure class="hchart">
+            <figcaption><span>Profit / Loss</span><span class="hchart-now" data-f="chart.pnl">—</span></figcaption>
+            <div class="hchart-plot" id="pnl-chart"></div>
+          </figure>
+          <figure class="hchart">
+            <figcaption><span>Positions value</span><span class="hchart-now" data-f="chart.posval">—</span></figcaption>
+            <div class="hchart-plot" id="posval-chart"></div>
+          </figure>
+        </div>
+        <dl class="home-stats" id="home-stats"></dl>
+        <div class="home-foot">
+          <div class="home-status" id="home-status">
+            <span class="live-dot" aria-hidden="true"></span>
+            <span class="strip-live" data-f="status.live">live</span>
+            <span class="strip-sep" aria-hidden="true">/</span>
+            <span data-f="agent.mode_chip">paper</span>
+            <span class="strip-sep" aria-hidden="true">/</span>
+            <a class="home-updated" href="feed.json" data-f="status.updated">updated —</a>
+          </div>
+          <dl class="home-tokens">
+            <div><dt>Tokens all&#8209;time</dt><dd data-f="compute.total_tokens">—</dd></div>
+            <div><dt>This run</dt><dd data-f="compute.session_tokens">—</dd></div>
+          </dl>
+        </div>
+      </aside>
 
-<main id="main">
+      <div class="home-globe planet" id="globe" aria-label="Live weather markets">
+        <canvas id="globe-canvas"></canvas>
 
-  <section class="hero" aria-labelledby="hero-h">
-    <div class="eyebrow"><span>Standing disagreement</span><span class="eyebrow-rule"></span></div>
-    <div id="hero-slot"><p class="empty">Loading the agent's current position…</p></div>
-    <p class="hero-note" id="hero-h">The widest gap the agent currently holds between its own
-      probability and the price the market is offering. It is wrong if the line below it comes true.</p>
-  </section>
+        <div class="lenses" role="tablist" aria-label="Globe view">
+          <button class="lens on" data-lens="temp" role="tab">Temperature</button>
+          <button class="lens" data-lens="edge" role="tab">Edges</button>
+          <button class="lens" data-lens="skill" role="tab">Disagreement</button>
+          <button class="lens" data-lens="anomaly" role="tab">Anomaly</button>
+        </div>
 
-  <section class="ledger" aria-label="Performance">
-    <div class="ledger-chart">
-      <div class="eyebrow"><span>Equity</span><span class="eyebrow-rule"></span></div>
-      <div id="curve-slot"></div>
-    </div>
-    <dl class="stats" id="stats-slot"></dl>
-  </section>
+        <aside class="opprail" id="opprail" hidden aria-label="Rail">
+          <div class="opprail-h"><span class="rail-title">Where the edges are</span>
+            <span class="opprail-n" data-f="opp.count"></span></div>
+          <div class="opprail-list" id="opprail-list"></div>
+          <p class="opprail-foot">Ranked by edge × liquidity × time to close. Click to fly there.</p>
+        </aside>
 
-  <section class="section" aria-labelledby="notes-h">
-    <div class="eyebrow"><span id="notes-h">Field notes</span><span class="eyebrow-rule"></span>
-      <span class="eyebrow-n" data-f="notes.count"></span></div>
-    <p class="section-lede">A daily build-in-public log, straight from the journal: the day's
-      result, what's still open, and the call the agent is most alone on. The top line of each
-      note is written to copy to X.</p>
-    <div id="notes-slot"></div>
-  </section>
+        <div class="globe-legend" aria-hidden="true">
+          <span><i class="dot dot-market"></i>market</span>
+          <span><i class="dot dot-pending"></i>edge found</span>
+          <span><i class="dot dot-held"></i>bet placed</span>
+          <span><i class="dot dot-won"></i>won</span>
+          <span><i class="dot dot-lost"></i>lost</span>
+        </div>
 
-  <section class="section" aria-labelledby="outlook-h">
-    <div class="eyebrow"><span id="outlook-h">Open claims</span><span class="eyebrow-rule"></span>
-      <span class="eyebrow-n" data-f="theses.count"></span></div>
-    <div id="theses-slot" class="cards"></div>
-  </section>
+        <div class="globe-foot">
+          <span class="globe-cap"><span class="field-dot" aria-hidden="true"></span><span data-f="globe.caption">plotting markets…</span></span>
+          <div class="templegend" aria-hidden="true">
+            <span class="tl-lab">≤ −25°</span>
+            <span class="tl-bar"></span>
+            <span class="tl-lab">≥ 44°C</span>
+            <span class="tl-src" data-f="temperature.source">current global temperature</span>
+          </div>
+          <span class="globe-hint">drag to spin · scroll to zoom · click a market</span>
+        </div>
 
-  <section class="section two-up">
-    <div>
-      <div class="eyebrow"><span>Positions</span><span class="eyebrow-rule"></span>
-        <span class="eyebrow-n" data-f="positions.count"></span></div>
-      <div class="slot-note" data-f="positions.value"></div>
-      <div id="positions-slot"></div>
-    </div>
-    <div>
-      <div class="eyebrow"><span>Settled</span><span class="eyebrow-rule"></span>
-        <span class="eyebrow-n" data-f="track.count"></span></div>
-      <div class="slot-note" data-f="track.pnl"></div>
-      <div id="track-slot"></div>
+        <div class="timeaxis" id="timeaxis" hidden>
+          <button class="ta-play" id="ta-play" aria-label="Play the forecast">▶</button>
+          <input class="ta-slider" id="ta-slider" type="range" min="0" max="6" value="0" step="1"
+                 aria-label="Forecast lead time">
+          <span class="ta-label" id="ta-label">now</span>
+          <span class="ta-src">our GraphCast forecast</span>
+        </div>
+
+        <div class="globe-tip" id="globe-tip" role="status" hidden></div>
+        <p class="globe-fallback">The globe needs a canvas-capable browser. Every market is in
+          <a href="feed.json">feed.json</a>.</p>
+      </div>
     </div>
   </section>
 
-  <section class="section" aria-labelledby="activity-h">
-    <div class="eyebrow"><span id="activity-h">Activity</span><span class="eyebrow-rule"></span>
-      <span class="eyebrow-n" data-f="activity.count"></span></div>
-    <p class="section-lede">Every entry, exit, and resolution, newest first — the same tape as a
-      Polymarket profile. Buys and sells show the price paid; resolutions show what they returned.</p>
-    <div id="activity-slot"></div>
+  <!-- POSITIONS -->
+  <section class="view view-page" data-view="positions" hidden>
+    <div class="page">
+      <header class="page-head">
+        <h1>Positions &amp; claims</h1>
+        <p>What the agent holds now, marked to the live market, and the open views it has not yet
+          been proven right or wrong on.</p>
+      </header>
+
+      <section class="section" aria-labelledby="hero-h">
+        <div class="eyebrow"><span>Standing disagreement</span><span class="eyebrow-rule"></span></div>
+        <div id="hero-slot"><p class="empty">Loading the agent's current position…</p></div>
+        <p class="hero-note" id="hero-h">The widest gap the agent currently holds between its own
+          probability and the price the market is offering. It is wrong if the line below it comes true.</p>
+      </section>
+
+      <section class="section">
+        <div class="eyebrow"><span>Positions</span><span class="eyebrow-rule"></span>
+          <span class="eyebrow-n" data-f="positions.count"></span></div>
+        <div class="slot-note" data-f="positions.value"></div>
+        <div id="positions-slot"></div>
+      </section>
+
+      <section class="section" aria-labelledby="outlook-h">
+        <div class="eyebrow"><span id="outlook-h">Open claims</span><span class="eyebrow-rule"></span>
+          <span class="eyebrow-n" data-f="theses.count"></span></div>
+        <div id="theses-slot" class="cards"></div>
+      </section>
+
+      <section class="section">
+        <div class="eyebrow"><span>Performance</span><span class="eyebrow-rule"></span></div>
+        <dl class="stats" id="stats-slot"></dl>
+      </section>
+    </div>
   </section>
 
-  <section class="section" aria-labelledby="rsi-h">
-    <div class="eyebrow"><span id="rsi-h">Self-improvement</span><span class="eyebrow-rule"></span></div>
-    <p class="section-lede">OpenThomas rewrites its own decision parameters. A change ships only
-      after it beats the champion on leak-free replay of held-out days — and rolls back if live
-      results disagree. Nothing below was chosen by a human.</p>
-    <div id="rsi-slot"></div>
+  <!-- ACTIVITY -->
+  <section class="view view-page" data-view="activity" hidden>
+    <div class="page">
+      <header class="page-head">
+        <h1>Activity</h1>
+        <p>Every entry, exit, and resolution, newest first — the same tape a Polymarket profile
+          leads with. Buys and sells show the price paid; resolutions show what they returned.</p>
+      </header>
+
+      <section class="section" aria-labelledby="activity-h">
+        <div class="eyebrow"><span id="activity-h">Activity</span><span class="eyebrow-rule"></span>
+          <span class="eyebrow-n" data-f="activity.count"></span></div>
+        <div id="activity-slot"></div>
+      </section>
+
+      <section class="section">
+        <div class="eyebrow"><span>Settled</span><span class="eyebrow-rule"></span>
+          <span class="eyebrow-n" data-f="track.count"></span></div>
+        <div class="slot-note" data-f="track.pnl"></div>
+        <div id="track-slot"></div>
+      </section>
+    </div>
   </section>
 
-  <section class="section" aria-labelledby="compute-h">
-    <div class="eyebrow"><span id="compute-h">Compute</span><span class="eyebrow-rule"></span></div>
-    <p class="section-lede">What the thinking cost. Forecasting runs every cycle; replay is the
-      expensive one — it re-forecasts historical days to score a candidate prompt before promoting it.</p>
-    <div id="compute-slot"></div>
+  <!-- DAILY REPORT -->
+  <section class="view view-page" data-view="daily" hidden>
+    <div class="page">
+      <header class="page-head">
+        <h1>Daily report</h1>
+        <p>The agent's own end-of-day field note, templated from the journal — the day's result,
+          what's still open, and the call it is most alone on. The top line of each is written to copy to X.</p>
+      </header>
+
+      <section class="section" aria-labelledby="notes-h">
+        <div class="eyebrow"><span id="notes-h">Field notes</span><span class="eyebrow-rule"></span>
+          <span class="eyebrow-n" data-f="notes.count"></span></div>
+        <div id="notes-slot"></div>
+      </section>
+    </div>
+  </section>
+
+  <!-- BLOG -->
+  <section class="view view-page" data-view="blog" hidden>
+    <div class="page" id="blog-slot"></div>
+  </section>
+
+  <!-- SYSTEM -->
+  <section class="view view-page" data-view="system" hidden>
+    <div class="page">
+      <header class="page-head">
+        <h1>System</h1>
+        <p>How the machine works on itself, and what the thinking costs.</p>
+      </header>
+
+      <section class="section" aria-labelledby="rsi-h">
+        <div class="eyebrow"><span id="rsi-h">Self-improvement</span><span class="eyebrow-rule"></span></div>
+        <p class="section-lede">OpenThomas rewrites its own decision parameters. A change ships only
+          after it beats the champion on leak-free replay of held-out days — and rolls back if live
+          results disagree. Nothing below was chosen by a human.</p>
+        <div id="rsi-slot"></div>
+      </section>
+
+      <section class="section" aria-labelledby="compute-h">
+        <div class="eyebrow"><span id="compute-h">Compute</span><span class="eyebrow-rule"></span></div>
+        <p class="section-lede">What the thinking cost. Forecasting runs every cycle; replay is the
+          expensive one — it re-forecasts historical days to score a candidate prompt before promoting it.</p>
+        <div id="compute-slot"></div>
+      </section>
+    </div>
   </section>
 
 </main>
@@ -203,9 +259,9 @@
   </div>
 </footer>
 
-<script src="world.js?v=t12"></script>
-<script src="borders.js?v=t12"></script>
-<script src="globe.js?v=t12"></script>
-<script src="app.js?v=t12"></script>
+<script src="world.js?v=t13"></script>
+<script src="borders.js?v=t13"></script>
+<script src="globe.js?v=t13"></script>
+<script src="app.js?v=t13"></script>
 </body>
 </html>

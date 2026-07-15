@@ -128,7 +128,7 @@ def test_publish_writes_feed_json_atomically(settings, tmp_path):
     Journal(settings.db_path)
     path = publish(settings, tmp_path / "site")
     assert path.name == "feed.json"
-    assert json.loads(path.read_text())["schema_version"] == 4
+    assert json.loads(path.read_text())["schema_version"] == 5
     assert not list(path.parent.glob("*.tmp"))
 
 
@@ -163,6 +163,16 @@ def test_open_positions_are_marked_to_market_and_totalled(settings):
     assert perf["positions_value"] == 55.0
     assert perf["unrealized_pnl"] == 15.0
     assert perf["total_pnl"] == round(perf["realized_pnl"] + 15.0, 2)
+
+
+def test_pnl_and_positions_curves_come_straight_off_the_cycles(settings):
+    """The two home-page trends: cumulative P&L is value − bankroll, positions
+    value is value − cash, both per recorded cycle."""
+    j = Journal(settings.db_path)
+    j.record_cycle(account_value=1100.0, cash=900.0, n_positions=1)  # bankroll 1000
+    perf = build_feed(settings, j)["performance"]
+    assert perf["pnl_curve"][-1][1] == 100.0        # 1100 − 1000
+    assert perf["positions_curve"][-1][1] == 200.0  # 1100 − 900
 
 
 def test_a_position_without_a_live_quote_is_held_at_cost_not_invented(settings):

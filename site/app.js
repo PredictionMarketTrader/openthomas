@@ -117,51 +117,6 @@ function renderHero(feed) {
   slot.append(claim);
 }
 
-/* --- equity ----------------------------------------------------------------- */
-function renderCurve(feed) {
-  const slot = $("#curve-slot");
-  const curve = feed.performance.equity_curve;
-  slot.textContent = "";
-  if (curve.length < 2) {
-    slot.append(el("p", "empty", "The equity curve needs two cycles. The first is on the clock."));
-    return;
-  }
-
-  const W = 600, H = 132, PAD = 3;
-  const vals = curve.map((c) => c[1]).concat([feed.performance.bankroll]);
-  const lo = Math.min(...vals), hi = Math.max(...vals), span = hi - lo || 1;
-  const x = (i) => (i / (curve.length - 1)) * W;
-  const y = (v) => PAD + (1 - (v - lo) / span) * (H - 2 * PAD);
-
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("class", "curve");
-  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-  svg.setAttribute("preserveAspectRatio", "none");
-  svg.setAttribute("role", "img");
-  svg.setAttribute("aria-label",
-    `Account value from ${money(curve[0][1])} to ${money(curve[curve.length - 1][1])} over ${curve.length} cycles.`);
-
-  const ns = "http://www.w3.org/2000/svg";
-  const base = document.createElementNS(ns, "line");
-  base.setAttribute("class", "curve-base");
-  base.setAttribute("x1", 0); base.setAttribute("x2", W);
-  base.setAttribute("y1", y(feed.performance.bankroll));
-  base.setAttribute("y2", y(feed.performance.bankroll));
-  svg.append(base);
-
-  const line = document.createElementNS(ns, "polyline");
-  const down = curve[curve.length - 1][1] < feed.performance.bankroll;
-  line.setAttribute("class", "curve-line" + (down ? " down" : ""));
-  line.setAttribute("points", curve.map((c, i) => `${x(i)},${y(c[1])}`).join(" "));
-  svg.append(line);
-  slot.append(svg);
-
-  const cap = el("div", "curve-caption");
-  cap.append(el("span", null, curve[0][0].slice(0, 10)),
-             el("span", null, `${curve.length} cycles · dashed line = $${nfmt(feed.performance.bankroll)} start`),
-             el("span", null, curve[curve.length - 1][0].slice(0, 10)));
-  slot.append(cap);
-}
 
 // Wins green, losses red — the same read as a Polymarket profile. Neutral facts
 // (a drawdown, a Brier score) stay uncolored; green is reserved for money made.
@@ -184,6 +139,84 @@ function renderStats(feed) {
     ["Max drawdown", (p.max_drawdown * 100).toFixed(2) + "%", null],
   ];
   const dl = $("#stats-slot");
+  dl.textContent = "";
+  for (const [k, v, cls] of rows) {
+    const box = el("div", "stat");
+    const dd = el("dd", cls);
+    dd.innerHTML = v;
+    box.append(el("dt", null, k), dd);
+    dl.append(box);
+  }
+}
+
+/* --- home: the two headline trends + a compact stat block -------------------
+   A P&L curve against a breakeven baseline and a positions-value curve, both
+   straight off the recorded cycles — the pair a Polymarket profile leads with. */
+function sparkline(sel, series, opts = {}) {
+  const host = $(sel);
+  if (!host) return;
+  host.textContent = "";
+  if (!series || series.length < 2) {
+    host.append(el("p", "hchart-empty", "Two cycles needed for a trend."));
+    return;
+  }
+  const W = 320, H = 96, PAD = 5, ns = "http://www.w3.org/2000/svg";
+  const vals = series.map((c) => c[1]);
+  const base = opts.baseline;
+  const all = base != null ? vals.concat([base]) : vals;
+  const lo = Math.min(...all), hi = Math.max(...all), span = hi - lo || 1;
+  const x = (i) => (i / (series.length - 1)) * W;
+  const y = (v) => PAD + (1 - (v - lo) / span) * (H - 2 * PAD);
+  const last = vals[vals.length - 1];
+  const down = base != null ? last < base : last < vals[0];
+  const pts = series.map((c, i) => `${x(i).toFixed(1)},${y(c[1]).toFixed(1)}`).join(" ");
+
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("class", "spark" + (down ? " down" : ""));
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("preserveAspectRatio", "none");
+  const area = document.createElementNS(ns, "polygon");
+  area.setAttribute("class", "spark-area");
+  area.setAttribute("points", `0,${H} ${pts} ${W},${H}`);
+  svg.append(area);
+  if (base != null) {
+    const bl = document.createElementNS(ns, "line");
+    bl.setAttribute("class", "spark-base");
+    bl.setAttribute("x1", 0); bl.setAttribute("x2", W);
+    bl.setAttribute("y1", y(base).toFixed(1)); bl.setAttribute("y2", y(base).toFixed(1));
+    svg.append(bl);
+  }
+  const line = document.createElementNS(ns, "polyline");
+  line.setAttribute("class", "spark-line");
+  line.setAttribute("points", pts);
+  svg.append(line);
+  host.append(svg);
+}
+
+function renderHomeCharts(feed) {
+  const p = feed.performance;
+  sparkline("#pnl-chart", p.pnl_curve, { baseline: 0 });
+  sparkline("#posval-chart", p.positions_curve, {});
+  const pnlNow = p.pnl_curve.length ? p.pnl_curve[p.pnl_curve.length - 1][1] : 0;
+  const posNow = p.positions_curve.length ? p.positions_curve[p.positions_curve.length - 1][1] : 0;
+  const set = (k, v, cls) => {
+    const n = $(`[data-f="${k}"]`); if (!n) return;
+    n.textContent = v; n.classList.remove("up", "down"); if (cls) n.classList.add(cls);
+  };
+  set("chart.pnl", signed(pnlNow), tone(pnlNow));
+  set("chart.posval", money(posNow), null);
+}
+
+function renderHomeStats(feed) {
+  const p = feed.performance;
+  const rows = [
+    ["Total P&L", signed(p.total_pnl), tone(p.total_pnl)],
+    ["Positions value", money(p.positions_value), null],
+    ["Win rate", p.settled_trades ? `${(p.win_rate * 100).toFixed(0)}%` : "—", null],
+    ["Biggest win", p.biggest_win == null ? "—" : signed(p.biggest_win), p.biggest_win > 0 ? "up" : null],
+  ];
+  const dl = $("#home-stats");
+  if (!dl) return;
   dl.textContent = "";
   for (const [k, v, cls] of rows) {
     const box = el("div", "stat");
@@ -828,7 +861,7 @@ function tickLive() {
   const upd = $('[data-f="status.updated"]');
   if (upd) upd.innerHTML = LIVE.lastCycle
     ? "updated " + ago(LIVE.lastCycle) : "no cycle yet";
-  $("#strip") && $("#strip").classList.toggle("is-stale", stale);
+  $("#home-status") && $("#home-status").classList.toggle("is-stale", stale);
   $("#globe") && $("#globe").classList.toggle("is-stale", stale);
 }
 
@@ -869,6 +902,68 @@ function renderChrome(feed) {
   }
 }
 
+/* --- routing: one page at a time --------------------------------------------
+   Hash routes so the static host needs no rewrite rules. Every view is rendered
+   once per feed; the router only decides which one is shown. */
+const ROUTES = ["home", "positions", "activity", "daily", "blog", "system"];
+function currentRoute() {
+  const raw = (location.hash || "").replace(/^#\/?/, "");
+  const [top, sub] = raw.split("/");
+  return { view: ROUTES.includes(top) ? top : "home", sub: sub || "" };
+}
+function showView() {
+  const { view, sub } = currentRoute();
+  document.querySelectorAll("#app > [data-view]").forEach((v) => { v.hidden = v.dataset.view !== view; });
+  document.querySelectorAll(".nav-links a").forEach((a) => a.classList.toggle("on", a.dataset.route === view));
+  document.body.classList.toggle("is-home", view === "home");
+  if (view === "blog") renderBlogRoute(sub);
+  window.scrollTo(0, 0);
+}
+
+/* --- blog: authored technical notes, loaded from blog.json ------------------- */
+let BLOG = null;
+async function loadBlog() {
+  try { const r = await fetch("blog.json", { cache: "no-store" }); if (r.ok) BLOG = await r.json(); }
+  catch (e) { /* no blog file → the page just shows an empty blog */ }
+  const rt = currentRoute();
+  if (rt.view === "blog") renderBlogRoute(rt.sub);
+}
+function blogMeta(post) {
+  const meta = el("div", "blog-meta");
+  meta.append(el("span", "blog-date", post.date));
+  for (const t of post.tags || []) meta.append(el("span", "blog-tag", t));
+  return meta;
+}
+function renderBlogRoute(slug) {
+  const slot = $("#blog-slot");
+  if (!slot) return;
+  const posts = (BLOG && BLOG.posts) || [];
+  slot.textContent = "";
+  if (!posts.length) { slot.append(el("p", "empty", "The blog is warming up. Check back soon.")); return; }
+  const post = slug && posts.find((p) => p.slug === slug);
+  if (post) {
+    const back = el("a", "blogback", "← All posts"); back.href = "#/blog";
+    slot.append(back);
+    const art = el("article", "blogpost");
+    art.append(blogMeta(post), el("h1", "blogpost-title", post.title));
+    for (const para of post.body || []) art.append(el("p", "blogpost-p", para));
+    slot.append(art);
+  } else {
+    const head = el("header", "page-head");
+    head.append(el("h1", null, "Blog"), el("p", null,
+      "Technical notes behind the trades — an edge we think the crowd is missing, a temperature " +
+      "signal worth watching, a station whose numbers look wrong."));
+    slot.append(head);
+    const list = el("div", "bloglist");
+    for (const p of posts) {
+      const a = el("a", "bloglink"); a.href = `#/blog/${p.slug}`;
+      a.append(blogMeta(p), el("h2", "bloglink-title", p.title), el("p", "bloglink-sum", p.summary || ""));
+      list.append(a);
+    }
+    slot.append(list);
+  }
+}
+
 /* --- feed loading + the live loop -------------------------------------------
    The page reloads the feed on its own so it stays current without a manual
    refresh, and drives the 3D field from the agent's state: warmth follows the
@@ -887,8 +982,9 @@ async function fetchFeed() {
 
 function applyFeed(feed) {
   renderChrome(feed);
+  renderHomeCharts(feed);
+  renderHomeStats(feed);
   renderHero(feed);
-  renderCurve(feed);
   renderStats(feed);
   renderTheses(feed);
   renderPositions(feed);
@@ -913,11 +1009,15 @@ async function main() {
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDetail(); });
   document.querySelectorAll(".lens").forEach((b) => b.addEventListener("click", () => setLens(b.dataset.lens)));
 
+  window.addEventListener("hashchange", showView);
+  showView();                                  // route immediately, before the feed lands
+  loadBlog();                                  // authored posts, from blog.json
+
   const feed = await fetchFeed();
   if (!feed) {
-    $("#hero-slot").textContent = "";
-    $("#hero-slot").append(el("p", "empty",
-      "The feed did not load. The agent keeps trading either way — reload, or read feed.json directly."));
+    const slot = $("#hero-slot");
+    if (slot) { slot.textContent = ""; slot.append(el("p", "empty",
+      "The feed did not load. The agent keeps trading either way — reload, or read feed.json directly.")); }
     return;
   }
   applyFeed(feed);

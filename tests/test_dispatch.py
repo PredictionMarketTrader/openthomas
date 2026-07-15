@@ -80,7 +80,7 @@ def test_ensure_today_puts_the_dispatch_on_the_feed(settings):
     ensure_today(j, settings)
 
     feed = build_feed(settings, j)
-    assert feed["schema_version"] == 4
+    assert feed["schema_version"] == 5
     (note,) = feed["reports"]
     assert note["stats"]["return_pct"] == pytest.approx(0.005)
     assert note["body"] and note["tweet"]

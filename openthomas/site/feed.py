@@ -36,7 +36,7 @@ from ..report.vital import max_drawdown
 from ..weather.geo import locate
 from ..weather.temps import global_grid
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 def _downsample(curve: list[tuple[str, float]], limit: int) -> list[list]:
@@ -408,6 +408,13 @@ def _activity(journal: Journal, limit: int = 40) -> list[dict]:
 def _performance(journal: Journal, settings: Settings,
                  positions_value: float, unrealized_pnl: float) -> dict:
     curve = journal.equity_curve()
+    series = journal.cycle_series()
+    bankroll = settings.bankroll
+    # The two headline trends, both straight off the recorded cycles: cumulative
+    # P&L is account value over the starting book; positions value is what isn't
+    # sitting in cash. A reader gets the same two curves a Polymarket profile leads with.
+    pnl_curve = [(ts, av - bankroll) for ts, av, _ in series]
+    pos_curve = [(ts, av - cash) for ts, av, cash in series]
     stats = journal.settlement_stats()
     pairs = journal.forecast_outcome_pairs()
     value = curve[-1][1] if curve else settings.bankroll
@@ -435,6 +442,8 @@ def _performance(journal: Journal, settings: Settings,
         "brier": round(brier_score(pairs), 4) if pairs else None,
         "forecasts_scored": len(pairs),
         "equity_curve": _downsample(curve, settings.site.max_curve_points),
+        "pnl_curve": _downsample(pnl_curve, settings.site.max_curve_points),
+        "positions_curve": _downsample(pos_curve, settings.site.max_curve_points),
     }
 
 

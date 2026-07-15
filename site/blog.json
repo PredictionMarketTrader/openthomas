@@ -1,0 +1,43 @@
+{
+  "posts": [
+    {
+      "slug": "how-to-read-openthomas",
+      "date": "2026-07-15",
+      "title": "How to read OpenThomas",
+      "tags": ["about"],
+      "summary": "What this site is, what's real on it, and what to trust.",
+      "body": [
+        "OpenThomas is an autonomous agent that forecasts station temperatures and trades them on Kalshi and Polymarket. Everything on this site is generated from its own journal — the positions it holds, the edges it thinks it has found and why, and what its thinking cost in tokens. Nothing here is written by a human after the fact except these blog posts.",
+        "It runs in paper mode against a $100,000 book. Fills are simulated at the real bid and ask, on live venue data, but no customer money is at risk and none of this is investment advice. The point of paper mode is falsifiability, not safety theatre: every claim carries the market price at the moment it was made and the observation that would prove it wrong.",
+        "The Home page leads with the two trends that matter — cumulative profit and loss, and how much of the book is deployed in positions versus sitting in cash — over a globe wearing the world's current temperature. Positions and Activity are the live book and the tape. Daily report is the agent's own end-of-day note, templated from the journal. This Blog is where we write up the analysis behind the trades: an edge we think the crowd is missing, a temperature signal worth watching, a station whose numbers look wrong.",
+        "The rule we hold ourselves to: a thesis appears here before it settles, and its resolution appears here afterwards, so the record cannot be quietly edited. When we are wrong — and over any short window we often are — the losses stay on the page. That is the content."
+      ]
+    },
+    {
+      "slug": "hong-kong-july-rain-long-the-dry-side",
+      "date": "2026-07-14",
+      "title": "Long the dry side: Hong Kong July rainfall",
+      "tags": ["edge", "polymarket"],
+      "summary": "The market prices a wet July at 93%. Climatology and skew say the coin is closer to even.",
+      "body": [
+        "The Polymarket contract asks whether Hong Kong records less than 400mm of precipitation in July. The market is offering the under at about 7¢ — a 93% implied chance of a wet month. Our model reads it closer to 48¢. That is one of the widest disagreements in the book, so it is worth spelling out.",
+        "The crowd looks anchored on recent extremes: the August 2025 single-day rainfall record and the September 2025 super typhoons are fresh, vivid, and easy to extrapolate into 'Hong Kong summers are drowning.' But the contract is about July, and it is about a monthly total, not a headline day.",
+        "Hong Kong's climatological mean July rainfall sits around 370–390mm — already below the 400mm line before any view is taken. More importantly, rainfall distributions are strongly right-skewed: a handful of very wet months drag the mean up, which means the median month is drier than the average month. When the median sits under the threshold, more than half of years should resolve under 400mm even though the average year looks wet.",
+        "So the market is paying up for the memory of two disaster months to price a coin that climatology says is roughly even, maybe favouring the dry side. We are wrong if a single stalled system dumps a month's rain in a week — which is exactly the tail the crowd is anchored on, and exactly the invalidation we are watching. Follow it on the Positions page; it resolves at month end."
+      ]
+    },
+    {
+      "slug": "whose-temperature-is-on-the-globe",
+      "date": "2026-07-13",
+      "title": "Whose temperature is on the globe?",
+      "tags": ["method", "weather"],
+      "summary": "The planet on the home page wears our own forecast, not a data vendor's — here's how, and why it matters for trading.",
+      "body": [
+        "The globe on the home page is skinned with the world's 2-metre temperature, cold blue to hot red. For most of the map that field is not a data vendor's observation — it is our own forecast, produced on our GPUs and sampled onto the grid the page reads.",
+        "We run GraphCast for the deterministic field and GenCast for the ensemble spread. The point of owning the forecast rather than pulling a vendor's current-conditions feed is that a trader does not care what the temperature is now; they care what the settlement observation will be. The globe's time axis exists for exactly this — drag it and the field advances day by day toward the dates our contracts resolve on.",
+        "The colour ramp is clamped at roughly −25°C and 44°C. That is deliberate: about a tenth of the planet at any moment — the Antarctic interior, Siberia, the high plateaus — is colder than the cold end and clamps to the deepest blue, and that is fine. The gradient is tuned for the inhabited, tradeable band where a degree changes a contract, not for resolving the poles.",
+        "Where our forecast and the market's implied temperature disagree, the Edge lens lights up. That disagreement, priced against the observation that will later settle it, is the whole game."
+      ]
+    }
+  ]
+}

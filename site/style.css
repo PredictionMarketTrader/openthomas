@@ -38,6 +38,7 @@
   --gut: clamp(20px, 5vw, 64px);
   --wide: 1180px;
   --lab: 10.5px;   /* label size, uppercase, tracked */
+  --nav-h: 54px;   /* the top navigation bar */
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -56,7 +57,7 @@ body {
 /* The starfield sits behind everything, fixed, painted once by globe.js. */
 #stars { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0;
          pointer-events: none; }
-.strip, .planet, #main, .foot, .detail { position: relative; z-index: 1; }
+.strip, .planet, #main, .foot, .detail, .nav, #app { position: relative; z-index: 1; }
 
 a { color: inherit; text-decoration-color: var(--rule); text-underline-offset: 3px; }
 a:hover { text-decoration-color: var(--mercury); }
@@ -611,3 +612,113 @@ h1 { font: 600 clamp(30px, 5vw, 54px)/1 var(--mono); letter-spacing: -.045em; ma
             font-size: 13px; color: var(--vapor); font-variant-numeric: tabular-nums; }
 .tok-meta b { color: var(--paper); font-weight: 500; }
 @media (max-width: 620px) { .tok-split { grid-template-columns: 1fr; } }
+
+/* ===========================================================================
+   Multi-page shell: a top nav, a no-scroll home, and scrollable content pages.
+   =========================================================================== */
+.nav { position: sticky; top: 0; z-index: 20; height: var(--nav-h);
+       background: color-mix(in srgb, var(--ink) 88%, transparent);
+       backdrop-filter: blur(8px); border-bottom: 1px solid var(--rule); }
+.nav-in { max-width: var(--wide); margin: 0 auto; height: 100%; padding: 0 var(--gut);
+          display: flex; align-items: center; gap: clamp(14px, 3vw, 28px); }
+.nav-brand { font: 600 16px/1 var(--mono); letter-spacing: -.02em; color: var(--paper);
+             text-decoration: none; flex: none; }
+.nav-links { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; }
+.nav-links::-webkit-scrollbar { display: none; }
+.nav-links a { font-size: var(--lab); letter-spacing: .1em; text-transform: uppercase;
+               color: var(--vapor); text-decoration: none; padding: 7px 11px; white-space: nowrap;
+               border-bottom: 2px solid transparent; }
+.nav-links a:hover { color: var(--paper); }
+.nav-links a.on { color: var(--paper); border-bottom-color: var(--mercury); }
+.nav-right { margin-left: auto; display: inline-flex; align-items: center; gap: 13px; flex: none; }
+.nav-icon { display: inline-flex; align-items: center; color: var(--vapor); line-height: 0;
+            transition: color .15s; }
+.nav-icon svg { display: block; }
+.nav-icon:hover { color: var(--paper); }
+.nav-icon-hf { font-size: 17px; }
+
+/* #app replaces the old centred #main column: full-bleed so home can fill the
+   screen. Each content page sets its own width via .page. */
+#app { max-width: none; margin: 0; padding: 0; }
+.view[hidden] { display: none; }
+
+/* Home: exactly one screen. A left info panel — value, the two trends, a compact
+   stat block — beside the globe, which fills the rest. */
+.home-grid { display: grid; grid-template-columns: minmax(300px, 360px) 1fr;
+             height: calc(100svh - var(--nav-h)); }
+.home-panel { display: flex; flex-direction: column; gap: 22px; overflow-y: auto;
+              padding: clamp(20px, 2.4vw, 32px); border-right: 1px solid var(--rule);
+              background: color-mix(in srgb, var(--ink) 66%, transparent); }
+.home-grid .home-globe { height: 100%; min-height: 0; overflow: hidden; }
+.home-value .mast-num { text-shadow: none; }
+.home-value .mast-delta { text-shadow: none; }
+.home-charts { display: flex; flex-direction: column; gap: 16px; }
+.hchart figcaption { display: flex; justify-content: space-between; align-items: baseline;
+                     font-size: var(--lab); letter-spacing: .1em; text-transform: uppercase;
+                     color: var(--vapor); margin-bottom: 6px; }
+.hchart-now { font: 500 15px/1 var(--mono); color: var(--paper); letter-spacing: -.02em;
+              text-transform: none; }
+.hchart-now.up { color: var(--gain); }
+.hchart-now.down { color: var(--ember); }
+.hchart-plot { height: 82px; }
+.hchart-empty { font-size: 12px; color: var(--vapor); margin: 20px 0; }
+.spark { width: 100%; height: 100%; display: block; }
+.spark-line { fill: none; stroke: var(--gain); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.spark.down .spark-line { stroke: var(--ember); }
+.spark-area { fill: color-mix(in srgb, var(--gain) 13%, transparent); stroke: none; }
+.spark.down .spark-area { fill: color-mix(in srgb, var(--ember) 12%, transparent); }
+.spark-base { stroke: var(--rule); stroke-width: 1; stroke-dasharray: 3 3;
+              vector-effect: non-scaling-stroke; }
+.home-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
+              background: var(--rule); border: 1px solid var(--rule); }
+.home-foot { margin-top: auto; display: flex; flex-direction: column; gap: 13px;
+             padding-top: 16px; border-top: 1px solid var(--rule); }
+.home-status { display: flex; align-items: center; gap: 8px; font-size: var(--lab);
+               letter-spacing: .12em; text-transform: uppercase; color: var(--vapor); }
+.live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--mercury); flex: none;
+            box-shadow: 0 0 0 0 color-mix(in srgb, var(--mercury) 70%, transparent);
+            animation: pulse 2.6s ease-out infinite; }
+.home-status.is-stale .live-dot { animation: none; background: var(--vapor); }
+.home-status.is-stale .strip-live { color: var(--vapor); }
+.home-updated { color: var(--vapor); text-decoration: none; }
+.home-updated:hover { color: var(--paper); }
+.home-tokens { display: flex; gap: 26px; margin: 0; }
+.home-tokens dt { font-size: var(--lab); letter-spacing: .1em; text-transform: uppercase;
+                  color: var(--vapor); }
+.home-tokens dd { margin: 4px 0 0; font: 500 16px/1 var(--mono); letter-spacing: -.02em; }
+
+/* Content pages: a normal scrollable column under the nav. */
+.page { max-width: var(--wide); margin: 0 auto; padding: clamp(28px, 4vw, 56px) var(--gut) 90px; }
+.page-head { margin-bottom: 16px; }
+.page-head h1 { font: 600 clamp(28px, 4vw, 40px)/1.05 var(--mono); letter-spacing: -.03em; margin: 0 0 12px; }
+.page-head p { font: 400 17px/1.6 var(--serif); color: var(--vapor); max-width: 64ch; margin: 0; }
+.view-page .section:first-of-type { border-top: none; }
+body.is-home .foot { display: none; }
+
+/* Blog: a list of authored notes and the single-post read. */
+.bloglist { display: flex; flex-direction: column; }
+.bloglink { display: block; text-decoration: none; color: inherit; padding: 26px 0;
+            border-top: 1px solid var(--rule); }
+.bloglist .bloglink:last-child { border-bottom: 1px solid var(--rule); }
+.blog-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 11px; }
+.blog-date { font-size: var(--lab); letter-spacing: .12em; text-transform: uppercase;
+             color: var(--vapor); font-variant-numeric: tabular-nums; }
+.blog-tag { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--frost);
+            border: 1px solid color-mix(in srgb, var(--frost) 40%, transparent); padding: 2px 7px; }
+.bloglink-title { font: 500 22px/1.25 var(--mono); letter-spacing: -.02em; margin: 0 0 8px;
+                  color: var(--paper); transition: color .15s; }
+.bloglink:hover .bloglink-title { color: var(--frost-hi); }
+.bloglink-sum { font: 400 16px/1.6 var(--serif); color: var(--vapor); margin: 0; max-width: 70ch; }
+.blogback { display: inline-block; margin-bottom: 22px; font-size: var(--lab); letter-spacing: .12em;
+            text-transform: uppercase; color: var(--vapor); text-decoration: none; }
+.blogback:hover { color: var(--paper); }
+.blogpost { max-width: 68ch; }
+.blogpost-title { font: 600 clamp(26px, 3.6vw, 38px)/1.12 var(--mono); letter-spacing: -.03em;
+                  margin: 12px 0 26px; }
+.blogpost-p { font: 400 18px/1.72 var(--serif); color: var(--paper); margin: 0 0 20px; text-wrap: pretty; }
+
+@media (max-width: 860px) {
+  .home-grid { grid-template-columns: 1fr; grid-template-rows: auto minmax(300px, 1fr);
+               height: auto; min-height: calc(100svh - var(--nav-h)); }
+  .home-panel { border-right: none; border-bottom: 1px solid var(--rule); }
+}
