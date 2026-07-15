@@ -17,21 +17,31 @@ deterministic anchor and the field the site draws.
 ## Why these two
 
 Both are open-weight DeepMind models that beat the operational IFS on most
-headline scores, and both initialise from **free ECMWF open-data** (13 pressure
-levels, ~7 h stale) — no paid CDS/ERA5 feed. GraphCast is one autoregressive pass
-per step; GenCast is a score-based diffusion model that samples an *ensemble* of
-trajectories, which is exactly the uncertainty a trader needs.
+headline scores. GraphCast is one autoregressive pass per step; GenCast is a
+score-based diffusion model that samples an *ensemble* of trajectories — exactly
+the uncertainty a trader needs.
 
-## Measured resource profile
+**Inputs differ, and it matters.** GraphCast operational initialises from **free
+ECMWF open-data** (13 pressure levels, ~7 h stale) — low latency, ideal for live.
+GenCast additionally needs **sst** (sea-surface temperature), which open-data
+omits, so it initialises from **ERA5 via CDS** (which carries sst and all 37
+levels). ERA5 is a reanalysis ~5 days behind real time, so GenCast today is the
+**hindcast / backtest / skill-comparison** engine; a live real-time GenCast would
+inject a free sst field (e.g. NOAA OISST) into the open-data path instead.
 
-- **GraphCast operational (0.25°)** — **~26 GB VRAM** on GPU (bf16 + gradient
-  checkpointing, can't shrink further); **~55 min for a 7-day run on CPU** (80
-  cores). It fits a ≥32 GB card (runs in minutes) but *not* a 24 GB card — on a
-  24 GB box, run CPU.
-- **GenCast** — the sampler does `num_noise_levels = 20` model forwards per step,
-  times the ensemble size, so it is **GPU-only** (a diffusion ensemble on CPU is
-  many hours). The **1.0° Mini** variant fits a single modest GPU; the 0.25°
-  Operational variant wants a large (80 GB-class) GPU.
+## Measured resource profile (on an A800 80 GB)
+
+| model | invoke as | VRAM | notes |
+|---|---|---|---|
+| **GraphCast operational** 0.25°/13 | `graphcast` | **26 GB** GPU · RAM on CPU | bf16 + grad-checkpoint; **~55 min/7-day on CPU** (80 cores, >57 GB RAM), minutes on a ≥32 GB GPU. **Live on the site.** |
+| **GraphCast full** 0.25°/37 | `graphcast` + `GC_MODEL=full` | **~60 GB** GPU | rollout ~1m16s; needs ERA5 (37 levels) so `--input cds`. Fits 80 GB, not a 48 GB card. |
+| **GenCast** 1.0° | `gencast-1.0` | **~9 GB** GPU | the practical ensemble: 5 members ~12 min, fits any ≥16 GB card. |
+| GenCast 0.25° | `gencast-0.25-Oper` | **>80 GB / member** | TPU / model-sharding territory — does *not* fit a single 80 GB GPU even for one member. Avoid on our hardware. |
+
+Two gotchas the scripts encode: (1) GenCast variants are selected by the **model
+name** (`gencast-1.0`, `gencast-0.25-Oper`, …), *not* `--model-version` (which
+ai-models ignores). (2) GenCast is **GPU-only** — the sampler does
+`num_noise_levels = 20` forwards per step × the ensemble, so CPU is hours.
 
 ## Cadence & placement
 

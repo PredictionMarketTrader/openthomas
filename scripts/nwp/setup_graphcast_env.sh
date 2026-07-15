@@ -21,7 +21,9 @@ mkdir -p "$GC_HOME"
 echo "[1/4] venv + pinned install"
 [ -d "$VENV" ] || python3 -m venv "$VENV"
 "$PIP" install -q -U pip
-"$PIP" install -q ai-models ai-models-graphcast
+# pysocks lets requests use the reverse-SOCKS proxy run_remote.sh sets on boxes
+# with no clean route to ECMWF/AWS.
+"$PIP" install -q ai-models ai-models-graphcast pysocks
 # graphcast is git-only (not on PyPI); jax pinned to 0.4.28 to match dm-haiku's
 # jax.linear_util use (removed in newer jax) and to run on driver ≥525.
 "$PIP" install -q "jax[cuda12]==0.4.28" "git+https://github.com/google-deepmind/graphcast.git"
@@ -52,6 +54,34 @@ elif old in s:
     open(p, "w").write(s.replace(old, new)); print("  stream -> oper")
 else:
     sys.exit("  STREAM PATTERN NOT FOUND — check ai-models-graphcast version")
+PYEOF
+
+echo "[3b] add GC_MODEL=full switch (37-level full model from ERA5)"
+"$PY" - "$GM" <<'PYEOF'
+import sys
+p=sys.argv[1]; s=open(p).read()
+old_df='''        (
+            "params/GraphCast_operational - ERA5-HRES 1979-2021 - resolution 0.25 -"
+            " pressure levels 13 - mesh 2to6 - precipitation output only.npz"
+        ),'''
+new_df='''        (
+            "params/GraphCast - ERA5 1979-2017 - resolution 0.25 - pressure levels 37"
+            " - mesh 2to6 - precipitation input and output.npz"
+            if os.environ.get("GC_MODEL") == "full" else
+            "params/GraphCast_operational - ERA5-HRES 1979-2021 - resolution 0.25 -"
+            " pressure levels 13 - mesh 2to6 - precipitation output only.npz"
+        ),'''
+old_lv='''        ["t", "z", "u", "v", "w", "q"],
+        [50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000],'''
+new_lv='''        ["t", "z", "u", "v", "w", "q"],
+        ([1, 2, 3, 5, 7, 10, 20, 30, 50, 70, 100, 125, 150, 175, 200, 225, 250, 300,
+          350, 400, 450, 500, 550, 600, 650, 700, 750, 775, 800, 825, 850, 875, 900,
+          925, 950, 975, 1000] if os.environ.get("GC_MODEL") == "full"
+         else [50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000]),'''
+if "GC_MODEL" in s: print("  already GC_MODEL-patched")
+elif old_df in s and old_lv in s:
+    open(p,"w").write(s.replace(old_df,new_df).replace(old_lv,new_lv)); print("  GC_MODEL=full switch added")
+else: print("  GC_MODEL pattern not found (version drift?)", file=sys.stderr)
 PYEOF
 
 echo "[4/4] stage weights ($GC_HOME/{params,stats})"

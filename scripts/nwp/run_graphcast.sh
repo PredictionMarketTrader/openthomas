@@ -14,6 +14,12 @@
 # it for the run and restarts it after (the served model is briefly unavailable,
 # so that case is hand-run, not cron).
 #
+# This runs the operational (13-level) model from free open-data — the live path.
+# For the higher-fidelity 37-level FULL model, set GC_MODEL=full and use ERA5:
+#   GC_MODEL=full ai-models --input cds --date <YYYYMMDD> --assets <dir> \
+#     --lead-time 168 --path graphcast_full.grib graphcast
+# (~60 GB VRAM, needs ~/.cdsapirc; ERA5 is ~5 days stale — hindcast, not live.)
+#
 # Requires the patched GraphCast venv at $OPENTHOMAS_GC_HOME/venv-gc and the
 # weights under $OPENTHOMAS_GC_HOME/{params,stats} — build both with
 # setup_graphcast_env.sh.
