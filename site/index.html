@@ -9,14 +9,14 @@
 <meta property="og:description" content="An open-source, recursively self-improving agent turning probabilistic forecasts into disciplined trades on prediction markets. Non-custodial, with explicit risk limits.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://openthomas.com">
-<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=t15">
-<link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png?v=t15">
-<link rel="apple-touch-icon" href="apple-touch-icon.png?v=t15">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=t16">
+<link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png?v=t16">
+<link rel="apple-touch-icon" href="apple-touch-icon.png?v=t16">
 <link rel="preload" href="fonts/plexmono-500.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/sourceserif4-var.woff2" as="font" type="font/woff2" crossorigin>
 <!-- Bump ?v on every deploy: assets are cached 5 min, index.html is no-cache, so a
      new version query busts the stale JS/CSS the moment the new HTML loads. -->
-<link rel="stylesheet" href="style.css?v=t15">
+<link rel="stylesheet" href="style.css?v=t16">
 </head>
 <body>
 
@@ -27,7 +27,7 @@
 <header class="nav" id="nav">
   <div class="nav-in">
     <a class="nav-brand" href="#/">
-      <img class="nav-logo" src="logo.png?v=t15" alt="" width="26" height="26">
+      <img class="nav-logo" src="logo.png?v=t16" alt="" width="26" height="26">
       <span>OpenThomas</span></a>
     <nav class="nav-links" aria-label="Primary">
       <a href="#/" data-route="home">Home</a>
@@ -55,45 +55,16 @@
        (P&L and positions value) beside a globe wearing the world's temperature. -->
   <section class="view view-home" data-view="home">
     <div class="home-grid">
-      <aside class="home-panel">
+      <aside class="home-brand-col">
         <div class="home-brand">
           <div class="home-brand-top">
-            <img class="home-logo" src="logo.png?v=t15" alt="Thomas Bayes" width="46" height="46">
+            <img class="home-logo" src="logo.png?v=t16" alt="Thomas Bayes" width="46" height="46">
             <h1 class="home-title">OpenThomas</h1>
           </div>
           <p class="home-tag">An open-source, recursively self&#8209;improving (RSI) agent that turns
             probabilistic forecasts — weather and events — into disciplined trades on prediction
             markets. Funds stay non&#8209;custodial; every risk limit is explicit and enforced.</p>
           <p class="home-homage">Named for Thomas Bayes.</p>
-        </div>
-        <div class="home-value">
-          <div class="mast-num" data-f="performance.account_value">—</div>
-          <div class="mast-delta" data-f="performance.return_line">—</div>
-        </div>
-        <div class="home-charts">
-          <figure class="hchart">
-            <figcaption><span>Profit / Loss</span><span class="hchart-now" data-f="chart.pnl">—</span></figcaption>
-            <div class="hchart-plot" id="pnl-chart"></div>
-          </figure>
-          <figure class="hchart">
-            <figcaption><span>Positions value</span><span class="hchart-now" data-f="chart.posval">—</span></figcaption>
-            <div class="hchart-plot" id="posval-chart"></div>
-          </figure>
-        </div>
-        <dl class="home-stats" id="home-stats"></dl>
-        <div class="home-foot">
-          <div class="home-status" id="home-status">
-            <span class="live-dot" aria-hidden="true"></span>
-            <span class="strip-live" data-f="status.live">live</span>
-            <span class="strip-sep" aria-hidden="true">/</span>
-            <span data-f="agent.mode_chip">paper</span>
-            <span class="strip-sep" aria-hidden="true">/</span>
-            <a class="home-updated" href="feed.json" data-f="status.updated">updated —</a>
-          </div>
-          <dl class="home-tokens">
-            <div><dt>Tokens all&#8209;time</dt><dd data-f="compute.total_tokens">—</dd></div>
-            <div><dt>This run</dt><dd data-f="compute.session_tokens">—</dd></div>
-          </dl>
         </div>
       </aside>
 
@@ -145,6 +116,38 @@
         <p class="globe-fallback">The globe needs a canvas-capable browser. Every market is in
           <a href="feed.json">feed.json</a>.</p>
       </div>
+
+      <aside class="home-metrics">
+        <div class="home-value">
+          <div class="mast-num" data-f="performance.account_value">—</div>
+          <div class="mast-delta" data-f="performance.return_line">—</div>
+        </div>
+        <div class="home-charts">
+          <figure class="hchart">
+            <figcaption><span>Profit / Loss</span><span class="hchart-now" data-f="chart.pnl">—</span></figcaption>
+            <div class="hchart-plot" id="pnl-chart"></div>
+          </figure>
+          <figure class="hchart">
+            <figcaption><span>Positions value</span><span class="hchart-now" data-f="chart.posval">—</span></figcaption>
+            <div class="hchart-plot" id="posval-chart"></div>
+          </figure>
+        </div>
+        <dl class="home-stats" id="home-stats"></dl>
+        <div class="home-foot">
+          <div class="home-status" id="home-status">
+            <span class="live-dot" aria-hidden="true"></span>
+            <span class="strip-live" data-f="status.live">live</span>
+            <span class="strip-sep" aria-hidden="true">/</span>
+            <span data-f="agent.mode_chip">paper</span>
+            <span class="strip-sep" aria-hidden="true">/</span>
+            <a class="home-updated" href="feed.json" data-f="status.updated">updated —</a>
+          </div>
+          <dl class="home-tokens">
+            <div><dt>Tokens all&#8209;time</dt><dd data-f="compute.total_tokens">—</dd></div>
+            <div><dt>This run</dt><dd data-f="compute.session_tokens">—</dd></div>
+          </dl>
+        </div>
+      </aside>
     </div>
   </section>
 
@@ -274,9 +277,9 @@
   </div>
 </footer>
 
-<script src="world.js?v=t15"></script>
-<script src="borders.js?v=t15"></script>
-<script src="globe.js?v=t15"></script>
-<script src="app.js?v=t15"></script>
+<script src="world.js?v=t16"></script>
+<script src="borders.js?v=t16"></script>
+<script src="globe.js?v=t16"></script>
+<script src="app.js?v=t16"></script>
 </body>
 </html>

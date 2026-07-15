@@ -646,11 +646,30 @@ h1 { font: 600 clamp(30px, 5vw, 54px)/1 var(--mono); letter-spacing: -.045em; ma
 
 /* Home: exactly one screen. A left info panel — value, the two trends, a compact
    stat block — beside the globe, which fills the rest. */
-.home-grid { display: grid; grid-template-columns: minmax(300px, 360px) 1fr;
+/* Three columns: the name on the left, the planet in the middle, the numbers on
+   the right. Both side panels scroll with a scrollbar that melts into the space
+   background, never the OS default. */
+.home-grid { display: grid;
+             grid-template-columns: minmax(220px, 280px) 1fr minmax(290px, 350px);
              height: calc(100svh - var(--nav-h)); }
-.home-panel { display: flex; flex-direction: column; gap: 22px; overflow-y: auto;
-              padding: clamp(20px, 2.4vw, 32px); border-right: 1px solid var(--rule);
-              background: color-mix(in srgb, var(--ink) 66%, transparent); }
+.home-brand-col, .home-metrics {
+  display: flex; flex-direction: column; gap: 22px; overflow-y: auto;
+  padding: clamp(20px, 2.2vw, 30px);
+  background: color-mix(in srgb, var(--ink) 66%, transparent);
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--vapor) 22%, transparent) transparent;
+}
+.home-brand-col { border-right: 1px solid var(--rule); justify-content: center; }
+.home-metrics { border-left: 1px solid var(--rule); }
+.home-brand-col::-webkit-scrollbar, .home-metrics::-webkit-scrollbar { width: 8px; }
+.home-brand-col::-webkit-scrollbar-track, .home-metrics::-webkit-scrollbar-track { background: transparent; }
+.home-brand-col::-webkit-scrollbar-thumb, .home-metrics::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--vapor) 20%, transparent);
+  border-radius: 4px; border: 2px solid transparent; background-clip: padding-box;
+}
+.home-brand-col::-webkit-scrollbar-thumb:hover, .home-metrics::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--vapor) 40%, transparent); background-clip: padding-box;
+}
 .home-grid .home-globe { height: 100%; min-height: 0; overflow: hidden; }
 .home-brand { display: flex; flex-direction: column; gap: 8px; }
 .home-brand-top { display: flex; align-items: center; gap: 12px; }
@@ -727,7 +746,9 @@ body.is-home .foot { display: none; }
 .blogpost-p { font: 400 18px/1.72 var(--serif); color: var(--paper); margin: 0 0 20px; text-wrap: pretty; }
 
 @media (max-width: 860px) {
-  .home-grid { grid-template-columns: 1fr; grid-template-rows: auto minmax(300px, 1fr);
+  .home-grid { grid-template-columns: 1fr; grid-template-rows: auto minmax(320px, 62svh) auto;
                height: auto; min-height: calc(100svh - var(--nav-h)); }
-  .home-panel { border-right: none; border-bottom: 1px solid var(--rule); }
+  .home-brand-col { border-right: none; border-bottom: 1px solid var(--rule);
+                    justify-content: flex-start; }
+  .home-metrics { border-left: none; border-top: 1px solid var(--rule); }
 }
