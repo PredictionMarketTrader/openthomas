@@ -434,7 +434,7 @@ h1 { font: 600 clamp(30px, 5vw, 54px)/1 var(--mono); letter-spacing: -.045em; ma
   background: color-mix(in srgb, var(--vapor) 62%, transparent); background-clip: padding-box;
 }
 
-/* --- time axis: scrub the Pangu forecast forward ---------------------------- */
+/* --- time axis: scrub the GraphCast forecast forward ------------------------ */
 .timeaxis { position: absolute; left: 50%; bottom: clamp(58px, 12vh, 96px); transform: translateX(-50%);
             z-index: 3; display: flex; align-items: center; gap: 12px;
             background: color-mix(in srgb, var(--ink) 84%, transparent); backdrop-filter: blur(9px);

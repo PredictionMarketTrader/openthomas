@@ -3,7 +3,7 @@
 append them to OpenThomas's local model source.
 
 Usage (from the nwp venv, which has cfgrib/xarray via ai-models):
-    python extract_stations.py pangu.grib --model pangu_local
+    python extract_stations.py graphcast.grib --model graphcast
 
 Reads 2t (2-metre temperature) steps, samples the nearest grid point to each
 settlement station, converts to °F, buckets hours into station-local calendar
@@ -41,7 +41,7 @@ MIN_HOURS_PER_DAY = 18  # partial local days give false extremes
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("grib", help="path to the model output GRIB file")
-    ap.add_argument("--model", default="pangu_local", help="model name in the consensus")
+    ap.add_argument("--model", default="graphcast", help="model name in the consensus")
     ap.add_argument("--out", default=str(Path.home() / ".openthomas" / "local-models.jsonl"))
     args = ap.parse_args()
 
@@ -74,7 +74,7 @@ def main() -> int:
                 by_day.setdefault(local.date().isoformat(), []).append(float(v))
 
             for day, values in sorted(by_day.items()):
-                if len(values) < MIN_HOURS_PER_DAY / 6:  # Pangu steps are 6-hourly
+                if len(values) < MIN_HOURS_PER_DAY / 6:  # GraphCast steps are 6-hourly
                     continue
                 for kind, value in (("high", max(values)), ("low", min(values))):
                     line = json.dumps({
@@ -128,7 +128,7 @@ def _write_grids(ds, run_dir: Path, issued_at: str) -> tuple[int, int]:
 
     grid = _sample_field(ds, xr, np, idx0, 2.5)
     grid.update({"as_of": str(vt[idx0]) + "+00:00", "issued": issued_at,
-                 "source": "OpenThomas · Pangu-Weather"})
+                 "source": "OpenThomas · GraphCast"})
     (run_dir / "tempgrid.json").write_text(json.dumps(grid))
 
     leads = []
@@ -141,7 +141,7 @@ def _write_grids(ds, run_dir: Path, issued_at: str) -> tuple[int, int]:
     base = _sample_field(ds, xr, np, idx0, 5.0)  # shared grid shape
     series = {"nx": base["nx"], "ny": base["ny"], "lat0": base["lat0"], "lon0": base["lon0"],
               "dlat": 5.0, "dlon": 5.0, "issued": issued_at,
-              "source": "OpenThomas · Pangu-Weather", "leads": leads}
+              "source": "OpenThomas · GraphCast", "leads": leads}
     (run_dir / "tempseries.json").write_text(json.dumps(series))
     return len(grid["temps"]), len(leads)
 

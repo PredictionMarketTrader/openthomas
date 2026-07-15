@@ -429,7 +429,7 @@ function renderGlobe(feed) {
   const legend = document.querySelector(".templegend");
   if (feed.temperature) {
     const t = feed.temperature, src = t.source || "Open-Meteo";
-    const kind = /pangu/i.test(src) ? "our forecast" : "current temp";
+    const kind = /graphcast|gencast/i.test(src) ? "our forecast" : "current temp";
     if (tsrc) tsrc.textContent = `${kind}${t.as_of ? " · valid " + ago(t.as_of) : ""} · ${src}`;
     if (legend) legend.style.display = "";
   } else if (legend) { legend.style.display = "none"; }
@@ -563,7 +563,7 @@ function setLens(mode) {
   updateTimeaxis();
 }
 
-/* --- the time axis: scrub our Pangu forecast forward, day by day ------------ */
+/* --- the time axis: scrub our GraphCast forecast forward, day by day -------- */
 let SERIES = null, PLAYING = null;
 
 async function loadSeries() {
@@ -830,7 +830,7 @@ async function main() {
     return;
   }
   applyFeed(feed);
-  loadSeries();                                // our Pangu forecast series, if published
+  loadSeries();                                // our GraphCast forecast series, if published
 
   setInterval(tickLive, 1000);                 // the "updated Ns ago" counter climbs live
   setInterval(async () => {                    // pull fresh data without a reload

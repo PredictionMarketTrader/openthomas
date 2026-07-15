@@ -224,13 +224,13 @@ def test_feed_carries_the_cached_temperature_grid_without_fetching(settings):
     got = build_feed(settings, Journal(settings.db_path))["temperature"]
     assert got["nx"] == 36 and got["source"] == "Open-Meteo" and len(got["temps"]) == 684
 
-    # our own Pangu forecast field wins over the Open-Meteo nowcast when present
-    (settings.home / "pangu-tempgrid.json").write_text(_json.dumps(
+    # our own GraphCast forecast field wins over the Open-Meteo nowcast when present
+    (settings.home / "graphcast-tempgrid.json").write_text(_json.dumps(
         {"lat0": -90, "lon0": -180, "dlat": 2.5, "dlon": 2.5, "ny": 73, "nx": 144,
-         "temps": [15.0] * (73 * 144), "source": "OpenThomas · Pangu-Weather",
+         "temps": [15.0] * (73 * 144), "source": "OpenThomas · GraphCast",
          "as_of": "2026-07-14T12:00:00+00:00"}))
     got = build_feed(settings, Journal(settings.db_path))["temperature"]
-    assert got["source"] == "OpenThomas · Pangu-Weather" and got["nx"] == 144
+    assert got["source"] == "OpenThomas · GraphCast" and got["nx"] == 144
 
 
 def test_skill_maps_disagreement_and_the_settled_verdict_per_city(settings):

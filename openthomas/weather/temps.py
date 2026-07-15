@@ -6,8 +6,8 @@ public feed touches no network (and the tests stay hermetic). The refresh runs
 publish-side on its own cadence — a stale-but-real grid beats a fresh-but-invented
 one, and a missing grid just falls the globe back to a plain blue planet.
 
-Open-Meteo's current temperature is an observation-grade nowcast; the agent's own
-Pangu forecast could feed this same grid later — the shape is the contract.
+Open-Meteo's current temperature is an observation-grade nowcast fallback; the
+agent's own GraphCast forecast is the primary field — the shape is the contract.
 """
 
 from __future__ import annotations
@@ -30,14 +30,14 @@ def _cache_path(home: Path | str) -> Path:
 def global_grid(home: Path | str) -> dict | None:
     """The temperature grid the globe wears, or None. Read-only — safe in the feed.
 
-    Our own Pangu forecast field wins when the NWP pipeline has produced one
-    (pangu-tempgrid.json, synced from the GPU box); otherwise the Open-Meteo
-    nowcast cache. The grid carries its own `source`, so the site labels it
-    honestly either way.
+    Our own GraphCast forecast field wins when the NWP pipeline has produced one
+    (graphcast-tempgrid.json, synced from the compute box); otherwise the
+    Open-Meteo nowcast cache. The grid carries its own `source`, so the site
+    labels it honestly either way.
     """
     home = Path(home)
     try:
-        return json.loads((home / "pangu-tempgrid.json").read_text())
+        return json.loads((home / "graphcast-tempgrid.json").read_text())
     except (OSError, json.JSONDecodeError):
         pass
     try:

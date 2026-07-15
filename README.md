@@ -39,7 +39,7 @@ And the receipts, because build-in-public means the losing numbers too: our repl
 | Layer | What it does | Who's in control |
 |---|---|---|
 | **Edge scanner** | Filters markets down to plausible mispricings; flags cross-platform arbitrage (Polymarket vs Kalshi price gaps) | deterministic code |
-| **Weather baseline** | Seven independent NWP models → per-strike probability at the exact settlement station, with per-(station, lead) bias/σ learned from leak-free hindcasts and hard truncation by today's observed extreme | deterministic code |
+| **Weather baseline** | Seven independent NWP models — including [our own **GraphCast** point forecast and **GenCast** ensemble](docs/NWP.md) — → per-strike probability at the exact settlement station, with per-(station, lead) bias/σ learned from leak-free hindcasts and hard truncation by today's observed extreme | deterministic code |
 | **Forecast engine** | LLM ensemble (median of N independent estimates), grounded in resolution rules and base rates — and clamped to baseline ± 0.15 on weather markets: the model adjusts the statistics, it never replaces them | your choice of model |
 | **Calibration layer** | Platt-scales raw forecasts against *your own* settled-trade history; blends with the market price ([pure LLM forecasts lose to market consensus; a blend beats it](https://arxiv.org/abs/2511.07678)) | deterministic code |
 | **Risk engine** | Fractional Kelly sizing, per-market / per-event / per-category caps, fee-aware EV threshold, longshot-zone filter, drawdown kill-switch | deterministic code — **the model proposes, the risk engine disposes** |

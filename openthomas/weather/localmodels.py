@@ -2,8 +2,8 @@
 (scripts/nwp/) merged into the multi-model consensus.
 
 The seam is deliberately dumb — an append-only JSONL of station-day extremes
-with an issue timestamp. Whatever produces rows (Pangu on CPU today,
-GraphCast/Aurora on freed GPUs later) plugs in without touching the desk,
+with an issue timestamp. Whatever produces rows (GraphCast point estimates
+today, GenCast ensemble means later) plugs in without touching the desk,
 and the verification store scores every local model per station exactly
 like it scores GFS or ECMWF. A model earns its place in the consensus by
 its bias/sigma record, not by being ours.
