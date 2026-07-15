@@ -81,6 +81,27 @@ referenced.
 5. **Retention**: Telegram/Discord notifications ("settled 3 markets today,
    +$12.40"), weekly digest, community leaderboard of opt-in vitals.
 
+## Daily dispatch (the build-in-public autoposter)
+
+`openthomas post` drafts one honest status update from the journal — account
+value and return since start, the day's settlements and their net PnL (or what
+it's holding on a quiet day), and the standing call it most disagrees with the
+market on. Templated, not model-written: it costs zero tokens, fits X's 280,
+and can't claim a profit the record doesn't show. Losses ship too — that's the
+point (see "Honesty converts" above).
+
+- **Draft** (safe, no keys): `openthomas post` prints the text to eyeball/copy.
+- **Publish**: `pip install 'openthomas[x]'`, export the four X app keys
+  (`X_API_KEY` / `X_API_SECRET` / `X_ACCESS_TOKEN` / `X_ACCESS_SECRET`, a
+  write-enabled app) into the runner's env — `~/.openthomas/env`, never the
+  repo — then `openthomas post --to-x`. Nothing is sent without the flag.
+- **Daily**: a cron line after the site publishes, e.g.
+  `0 14 * * * cd /path && . ~/.openthomas/env && openthomas post --to-x`.
+
+The same numbers are on openthomas.com (Positions value, Total/Realized/
+Unrealized P&L, Biggest win, and the Activity tape) — the post links back to it,
+so every claim is one click from the source, exactly as the feed rules require.
+
 ## Trust rules (non-negotiable)
 
 - Paper mode is the default forever; live requires two explicit switches.

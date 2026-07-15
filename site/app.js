@@ -163,23 +163,31 @@ function renderCurve(feed) {
   slot.append(cap);
 }
 
+// Wins green, losses red — the same read as a Polymarket profile. Neutral facts
+// (a drawdown, a Brier score) stay uncolored; green is reserved for money made.
+const tone = (v) => (v > 0 ? "up" : v < 0 ? "down" : null);
+
 function renderStats(feed) {
   const p = feed.performance;
   const rows = [
-    ["Realized P&L", signed(p.realized_pnl), p.realized_pnl < 0],
-    ["Settled", `${p.settled_trades}<small> trades</small>`, false],
-    ["Win rate", p.settled_trades ? (p.win_rate * 100).toFixed(0) + "%" : "—", false],
-    ["Brier score", p.brier === null ? "—" : p.brier.toFixed(3), false],
+    ["Total P&L", signed(p.total_pnl), tone(p.total_pnl)],
+    ["Positions value", money(p.positions_value), null],
+    ["Realized P&L", signed(p.realized_pnl), tone(p.realized_pnl)],
+    ["Unrealized P&L", signed(p.unrealized_pnl), tone(p.unrealized_pnl)],
+    ["Biggest win", p.biggest_win === null ? "—" : signed(p.biggest_win),
+     p.biggest_win > 0 ? "up" : null],
+    ["Win rate", p.settled_trades
+      ? `${(p.win_rate * 100).toFixed(0)}%<small> of ${p.settled_trades}</small>` : "—", null],
+    ["Brier score", p.brier === null ? "—" : p.brier.toFixed(3), null],
     // Drawdown is a fact, not a loss — every strategy has one. Red is reserved
     // for money actually given back.
-    ["Max drawdown", (p.max_drawdown * 100).toFixed(2) + "%", false],
-    ["Cycles run", nfmt(p.cycles), false],
+    ["Max drawdown", (p.max_drawdown * 100).toFixed(2) + "%", null],
   ];
   const dl = $("#stats-slot");
   dl.textContent = "";
-  for (const [k, v, bad] of rows) {
+  for (const [k, v, cls] of rows) {
     const box = el("div", "stat");
-    const dd = el("dd", bad ? "down" : null);
+    const dd = el("dd", cls);
     dd.innerHTML = v;
     box.append(el("dt", null, k), dd);
     dl.append(box);
@@ -231,28 +239,80 @@ function renderRows(slotSel, countSel, items, empty, row) {
   slot.append(rows);
 }
 
+// A small subtitle over a table: the column's one-line total, colored by sign.
+function slotNote(sel, text, v) {
+  const n = $(sel);
+  n.textContent = text || "";
+  n.classList.remove("up", "down");
+  if (text && v !== undefined && v !== 0) n.classList.add(v > 0 ? "up" : "down");
+}
+
 function renderPositions(feed) {
+  const p = feed.performance;
+  slotNote('[data-f="positions.value"]',
+    feed.positions.length
+      ? `${money(p.positions_value)} at market · ${signed(p.unrealized_pnl)} unrealized`
+      : "", p.unrealized_pnl);
   renderRows("#positions-slot", '[data-f="positions.count"]', feed.positions,
-    "No open positions. The agent is flat.", (p) => {
+    "No open positions. The agent is flat.", (q) => {
       const r = el("div", "row");
-      r.append(el("div", "row-q", p.question),
-               el("div", "row-n", money(p.cost_basis)),
-               el("div", "row-sub", `${p.side} · ${nfmt(p.qty)} @ ${cents(p.avg_cost)}`),
-               el("div", "row-side", p.platform));
+      const sub = el("div", "row-sub");
+      sub.append(el("span", tone(q.unrealized), signed(q.unrealized)),
+                 document.createTextNode(` · ${q.side} ${nfmt(q.qty)} @ ${cents(q.avg_cost)}`));
+      r.append(el("div", "row-q", q.question),
+               el("div", "row-n", money(q.value)), sub,
+               el("div", "row-side", q.platform));
       return r;
     });
 }
 
 function renderTrack(feed) {
+  const p = feed.performance;
+  slotNote('[data-f="track.pnl"]',
+    feed.track_record.length ? `${signed(p.realized_pnl)} realized · ${p.settled_trades} settled` : "",
+    p.realized_pnl);
   renderRows("#track-slot", '[data-f="track.count"]', feed.track_record,
     "Nothing has settled yet. The track record starts at the first resolution.", (s) => {
       const r = el("div", "row");
-      const n = el("div", "row-n" + (s.pnl < 0 ? " down" : ""), signed(s.pnl));
-      r.append(el("div", "row-q", s.question), n,
+      r.append(el("div", "row-q", s.question),
+               el("div", "row-n " + (tone(s.pnl) || ""), signed(s.pnl)),
                el("div", "row-sub", `resolved ${s.outcome} · ${s.ts.slice(0, 10)}`),
                el("div", "row-side", s.platform));
       return r;
     });
+}
+
+/* --- activity: the tape ------------------------------------------------------
+   Every entry, exit, and resolution in one stream — the Polymarket "Activity"
+   tab. Buys/sells carry the price paid; resolutions carry the realized PnL. */
+function renderActivity(feed) {
+  const items = feed.activity || [];
+  const slot = $("#activity-slot");
+  $('[data-f="activity.count"]').textContent = items.length || "";
+  slot.textContent = "";
+  if (!items.length) {
+    slot.append(el("p", "empty", "No activity yet. The tape starts at the first fill."));
+    return;
+  }
+  const rows = el("div", "rows");
+  for (const a of items) {
+    const settle = a.kind === "settle";
+    const r = el("div", "row");
+    const q = el("div", "row-q");
+    const chip = el("span", "act-kind");
+    chip.dataset.k = a.kind;
+    chip.textContent = settle ? "resolved" : a.kind;
+    q.append(chip, document.createTextNode(" " + a.question));
+    const n = settle
+      ? el("div", "row-n " + (tone(a.pnl) || ""), signed(a.pnl))
+      : el("div", "row-n", money(a.cost));
+    const sub = settle
+      ? `${a.outcome.toUpperCase()} · ${a.ts.slice(0, 10)}`
+      : `${a.side} ${nfmt(a.qty)} @ ${cents(a.price)} · ${a.ts.slice(0, 10)}`;
+    r.append(q, n, el("div", "row-sub", sub), el("div", "row-side", a.platform));
+    rows.append(r);
+  }
+  slot.append(rows);
 }
 
 /* --- self-improvement -------------------------------------------------------- */
@@ -744,21 +804,6 @@ function renderChrome(feed) {
   set("compute.total_tokens", tokens(c.total.total_tokens));
   set("compute.session_tokens", tokens(sess.total_tokens));
 
-  // The model gets a link when its weights are public — which, for an agent
-  // arguing that the crowd is wrong, is the difference between a claim and a
-  // checkable one.
-  const model = $('[data-f="agent.forecaster"]');
-  model.textContent = "";
-  const { label, url } = feed.agent.forecaster;
-  if (url) {
-    const a = el("a", "strip-model", label);
-    a.href = url;
-    a.rel = "noopener";
-    model.append(a);
-  } else {
-    model.textContent = label;
-  }
-
   const delta = $('[data-f="performance.return_line"]');
   delta.textContent = "";
   const v = el("span", p.return_pct < 0 ? "down" : null, pct(p.return_pct));
@@ -804,6 +849,7 @@ function applyFeed(feed) {
   renderTheses(feed);
   renderPositions(feed);
   renderTrack(feed);
+  renderActivity(feed);
   renderRsi(feed);
   renderCompute(feed);
   renderLive(feed);

@@ -79,7 +79,15 @@ a:hover { text-decoration-color: var(--mercury); }
 .strip-sep { color: var(--rule); }
 .strip-feed { margin-left: auto; text-decoration: none; color: var(--vapor); }
 .strip-feed:hover { color: var(--paper); }
-.strip-model:hover { color: var(--paper); }
+
+/* Open-source links, top-right: the repo and the model/dataset hub, as logos. */
+.strip-links { display: inline-flex; align-items: center; gap: 12px; margin-left: 16px; }
+.strip-icon { display: inline-flex; align-items: center; color: var(--vapor);
+              line-height: 0; transition: color .15s, opacity .15s; }
+.strip-icon svg { display: block; }
+.strip-icon:hover { color: var(--paper); }
+.strip-icon-hf { font-size: 17px; opacity: .9; }
+.strip-icon-hf:hover { opacity: 1; }
 
 .pulse { width: 6px; height: 6px; border-radius: 50%; background: var(--mercury); flex: none;
          box-shadow: 0 0 0 0 color-mix(in srgb, var(--mercury) 70%, transparent);
@@ -221,6 +229,7 @@ h1 { font: 600 clamp(30px, 5vw, 54px)/1 var(--mono); letter-spacing: -.045em; ma
 .stat dd { margin: 8px 0 0; font: 500 22px/1 var(--mono); letter-spacing: -.02em;
            font-variant-numeric: tabular-nums; }
 .stat dd.down { color: var(--ember); }
+.stat dd.up { color: var(--gain); }
 .stat dd small { font-size: 11px; letter-spacing: .06em; color: var(--vapor); font-weight: 400; }
 
 /* --- thesis cards ------------------------------------------------------------ */
@@ -257,8 +266,25 @@ h1 { font: 600 clamp(30px, 5vw, 54px)/1 var(--mono); letter-spacing: -.045em; ma
 .row-n { font: 500 16px/1 var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -.02em;
          text-align: right; }
 .row-n.down { color: var(--ember); }
+.row-n.up { color: var(--gain); }
+.row-sub .up { color: var(--gain); }
+.row-sub .down { color: var(--ember); }
 .row-side { font-size: var(--lab); letter-spacing: .14em; text-transform: uppercase;
             color: var(--vapor); text-align: right; margin-top: 6px; }
+
+/* A one-line total that sits under a section eyebrow, above its table. */
+.slot-note { font: 500 14px/1 var(--mono); font-variant-numeric: tabular-nums;
+             color: var(--vapor); margin: -6px 0 14px; }
+.slot-note.up { color: var(--gain); }
+.slot-note.down { color: var(--ember); }
+
+/* The activity tape: a small tag on each row saying what happened. */
+.act-kind { display: inline-block; font: 500 var(--lab)/1 var(--mono); letter-spacing: .13em;
+            text-transform: uppercase; color: var(--vapor); border: 1px solid var(--rule);
+            padding: 3px 6px; margin-right: 9px; vertical-align: 1px; }
+.act-kind[data-k="buy"] { color: var(--frost); border-color: color-mix(in srgb, var(--frost) 45%, transparent); }
+.act-kind[data-k="sell"] { color: var(--mercury); border-color: color-mix(in srgb, var(--mercury) 45%, transparent); }
+.act-kind[data-k="settle"] { color: var(--gain); border-color: color-mix(in srgb, var(--gain) 40%, transparent); }
 
 /* --- self-improvement -------------------------------------------------------- */
 .gen { border: 1px solid var(--rule); padding: 24px 26px; margin-bottom: 26px; }

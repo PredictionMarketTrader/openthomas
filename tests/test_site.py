@@ -128,8 +128,63 @@ def test_publish_writes_feed_json_atomically(settings, tmp_path):
     Journal(settings.db_path)
     path = publish(settings, tmp_path / "site")
     assert path.name == "feed.json"
-    assert json.loads(path.read_text())["schema_version"] == 2
+    assert json.loads(path.read_text())["schema_version"] == 3
     assert not list(path.parent.glob("*.tmp"))
+
+
+def _hold(j: Journal, qty: int, price: float) -> None:
+    j.record_forecast(Forecast(), market())
+    order = Order(market_id="M1", platform="kalshi", side=Side.YES, action=Action.BUY,
+                  qty=qty, limit_price=price, reason="edge")
+    j.record_fill(Fill(order=order, qty=qty, price=price, fee=0.0), market())
+
+
+def _board(settings, mid: float) -> None:
+    (settings.home / "board.json").write_text(json.dumps({
+        "ts": "2026-07-14T00:00:00+00:00",
+        "markets": [{"id": "M1", "platform": "kalshi", "question": "Q",
+                     "yes_bid": mid - 0.01, "yes_ask": mid + 0.01,
+                     "volume_24h": 0, "close_time": None}]}))
+
+
+def test_open_positions_are_marked_to_market_and_totalled(settings):
+    """A YES position is worth today's mid, not its cost. The value on the page,
+    the row, and the unrealized PnL all read from the same live board price."""
+    j = Journal(settings.db_path)
+    _hold(j, qty=100, price=0.40)  # cost basis $40
+    _board(settings, mid=0.55)     # now worth $55 → +$15 unrealized
+
+    feed = build_feed(settings, j)
+    (pos,) = feed["positions"]
+    assert pos["priced"] is True
+    assert pos["value"] == 55.0
+    assert pos["unrealized"] == 15.0
+    perf = feed["performance"]
+    assert perf["positions_value"] == 55.0
+    assert perf["unrealized_pnl"] == 15.0
+    assert perf["total_pnl"] == round(perf["realized_pnl"] + 15.0, 2)
+
+
+def test_a_position_without_a_live_quote_is_held_at_cost_not_invented(settings):
+    """No board price → mark at cost, unrealized 0. Publishing must not fabricate
+    a gain or loss from a quote we don't have."""
+    j = Journal(settings.db_path)
+    _hold(j, qty=100, price=0.40)  # no board.json written
+    (pos,) = build_feed(settings, j)["positions"]
+    assert pos["priced"] is False
+    assert pos["value"] == 40.0 and pos["unrealized"] == 0.0
+
+
+def test_activity_merges_fills_and_settlements_and_keeps_ids_private(settings):
+    j = Journal(settings.db_path)
+    _hold(j, qty=10, price=0.41)
+    j.record_settlement(j.positions()[0], Side.YES)
+
+    feed = build_feed(settings, j)
+    kinds = {a["kind"] for a in feed["activity"]}
+    assert "buy" in kinds and "settle" in kinds
+    assert "M1" not in json.dumps(feed["activity"])  # ids join server-side only
+    assert feed["performance"]["biggest_win"] == round(10 * (1 - 0.41), 2)
 
 
 def test_compute_dates_the_ledger_so_zero_tokens_is_not_read_as_cheap(settings):

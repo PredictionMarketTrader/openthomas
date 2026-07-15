@@ -35,7 +35,7 @@ from ..report.vital import max_drawdown
 from ..weather.geo import locate
 from ..weather.temps import global_grid
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def _downsample(curve: list[tuple[str, float]], limit: int) -> list[list]:
@@ -337,11 +337,80 @@ def _skill(journal: Journal, settings: Settings) -> list[dict]:
     return out[: settings.site.max_board]
 
 
-def _performance(journal: Journal, settings: Settings) -> dict:
+def _board_mids(settings: Settings) -> dict[str, float]:
+    """`{market_id: mid}` from the live board snapshot — the current price the
+    trading loop last saw, so open positions can be marked to market. Keyed by
+    the venue id, which stays server-side; only the derived value ships."""
+    snap = board_store.read(settings.home) or {}
+    out: dict[str, float] = {}
+    for m in snap.get("markets") or []:
+        bid, ask = m.get("yes_bid"), m.get("yes_ask")
+        if bid is not None and ask is not None:
+            out[m["id"]] = (bid + ask) / 2
+    return out
+
+
+def _positions(journal: Journal, mids: dict[str, float]) -> tuple[list[dict], float, float]:
+    """Open positions marked to market, and the book's value and unrealized PnL.
+
+    A YES contract is worth today's mid; a NO contract, one minus it. When no
+    live price is on hand we hold the position at cost — a missing quote is not
+    a move, and inventing one would put a fake gain or loss on the page. Returns
+    the rows plus (positions_value, unrealized_pnl) so the ledger and the list
+    read from the same marks.
+    """
+    rows: list[dict] = []
+    value = cost = 0.0
+    for p in journal.positions():
+        mid = mids.get(p.market_id)
+        mark = p.avg_cost if mid is None else (mid if p.side.value == "yes" else 1 - mid)
+        worth = p.qty * mark
+        value += worth
+        cost += p.cost_basis
+        rows.append({
+            "platform": p.platform, "question": p.question, "category": p.category,
+            "side": p.side.value, "qty": p.qty, "avg_cost": round(p.avg_cost, 4),
+            "cost_basis": round(p.cost_basis, 2),
+            "mark": round(mark, 4), "priced": mid is not None,
+            "value": round(worth, 2), "unrealized": round(worth - p.cost_basis, 2),
+            "loc": locate(p.market_id, p.platform, p.question),
+        })
+    rows.sort(key=lambda r: -abs(r["unrealized"]))
+    return rows, round(value, 2), round(value - cost, 2)
+
+
+def _activity(journal: Journal, limit: int = 40) -> list[dict]:
+    """The tape: every entry, exit, and resolution, newest first. Buys and sells
+    come from the fill log with the price paid; settlements carry the realized
+    PnL. Market ids join the two server-side and never ship — only the place, the
+    action, and the money do, the same shape a reader sees on the venue."""
+    out: list[dict] = []
+    for t in journal.recent_trades(limit=limit):
+        out.append({
+            "ts": t["ts"], "kind": t["action"],  # buy | sell
+            "platform": t["platform"], "question": t["question"],
+            "category": t["category"] or "", "side": t["side"], "qty": t["qty"],
+            "price": round(t["price"], 4), "cost": round(t["qty"] * t["price"], 2),
+            "loc": locate(t["market_id"], t["platform"], t["question"]),
+        })
+    for s in journal.recent_settlements(limit=limit):
+        out.append({
+            "ts": s["ts"], "kind": "settle", "platform": s["platform"],
+            "question": s["question"], "category": s["category"] or "",
+            "outcome": s["outcome"], "pnl": round(s["pnl"], 2),
+            "loc": locate(s["market_id"], s["platform"], s["question"]),
+        })
+    out.sort(key=lambda e: e["ts"], reverse=True)
+    return out[:limit]
+
+
+def _performance(journal: Journal, settings: Settings,
+                 positions_value: float, unrealized_pnl: float) -> dict:
     curve = journal.equity_curve()
     stats = journal.settlement_stats()
     pairs = journal.forecast_outcome_pairs()
     value = curve[-1][1] if curve else settings.bankroll
+    realized = round(stats["pnl"], 2)
     return {
         "as_of": curve[-1][0] if curve else None,
         "account_value": round(value, 2),
@@ -351,10 +420,17 @@ def _performance(journal: Journal, settings: Settings) -> dict:
         "max_drawdown": round(max_drawdown(curve), 6),
         "cycles": len(curve),
         "settled_trades": stats["n"],
-        "realized_pnl": round(stats["pnl"], 2),
+        "realized_pnl": realized,
+        "unrealized_pnl": round(unrealized_pnl, 2),
+        "total_pnl": round(realized + unrealized_pnl, 2),
+        "positions_value": round(positions_value, 2),
         "win_rate": round(stats["win_rate"], 4),
         "avg_win": round(stats["avg_win"], 2),
         "avg_loss": round(stats["avg_loss"], 2),
+        # Biggest win/loss are over the whole settled book, not the shown tail —
+        # the single trade that most defines the record, win or lose.
+        "biggest_win": None if not stats["n"] else round(stats["best"], 2),
+        "biggest_loss": None if not stats["n"] else round(stats["worst"], 2),
         "brier": round(brier_score(pairs), 4) if pairs else None,
         "forecasts_scored": len(pairs),
         "equity_curve": _downsample(curve, settings.site.max_curve_points),
@@ -458,6 +534,7 @@ def build_feed(settings: Settings, journal: Journal | None = None) -> dict:
     journal = journal or Journal(settings.db_path)
     status = _status(settings)
     temperature = global_grid(settings.home)
+    positions, book_value, unrealized = _positions(journal, _board_mids(settings))
     return {
         "schema_version": SCHEMA_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -477,20 +554,15 @@ def build_feed(settings: Settings, journal: Journal | None = None) -> dict:
             "kelly_fraction": settings.risk.kelly_fraction,
             "market_prior_weight": settings.risk.market_prior_weight,
         },
-        "performance": _performance(journal, settings),
+        "performance": _performance(journal, settings, book_value, unrealized),
         "temperature": temperature,
         "board": _board(journal, settings),
         "skill": _skill(journal, settings),
         "anomaly": _anomaly(settings, temperature),
-        "positions": [
-            {"platform": p.platform, "question": p.question, "category": p.category,
-             "side": p.side.value, "qty": p.qty, "avg_cost": round(p.avg_cost, 4),
-             "cost_basis": round(p.cost_basis, 2),
-             "loc": locate(p.market_id, p.platform, p.question)}
-            for p in journal.positions()
-        ],
+        "positions": positions,
         "theses": _theses(journal, settings),
         "track_record": _track_record(journal),
+        "activity": _activity(journal),
         "rsi": _rsi(settings),
         "compute": _compute(settings, journal, status),
         "links": {

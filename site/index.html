@@ -14,7 +14,7 @@
 <link rel="preload" href="fonts/sourceserif4-var.woff2" as="font" type="font/woff2" crossorigin>
 <!-- Bump ?v on every deploy: assets are cached 5 min, index.html is no-cache, so a
      new version query busts the stale JS/CSS the moment the new HTML loads. -->
-<link rel="stylesheet" href="style.css?v=t10">
+<link rel="stylesheet" href="style.css?v=t11">
 </head>
 <body>
 
@@ -26,12 +26,19 @@
     <span class="strip-live" data-f="status.live">live</span>
     <span class="strip-sep" aria-hidden="true">/</span>
     <span data-f="agent.mode_chip">paper trading</span>
-    <span class="strip-sep strip-opt" aria-hidden="true">/</span>
-    <span class="strip-opt" data-f="agent.forecaster">—</span>
     <span class="strip-sep" aria-hidden="true">/</span>
     <span data-f="status.cycle">cycle —</span>
     <a class="strip-ago" href="feed.json" data-f="status.updated">updated —</a>
     <a class="strip-feed" href="feed.json">feed.json</a>
+    <nav class="strip-links" aria-label="Open source">
+      <a class="strip-icon" href="https://github.com/PredictionMarketTrader/openthomas"
+         rel="noopener" aria-label="Source code on GitHub" title="Source code on GitHub">
+        <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.65 7.65 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+      </a>
+      <a class="strip-icon strip-icon-hf" href="https://huggingface.co/openthomas"
+         rel="noopener" aria-label="Open models &amp; datasets on Hugging Face"
+         title="Open models &amp; datasets on Hugging Face"><span aria-hidden="true">🤗</span></a>
+    </nav>
   </div>
 </div>
 
@@ -86,9 +93,9 @@
   <div class="globe-foot">
     <span class="globe-cap"><span class="field-dot" aria-hidden="true"></span><span data-f="globe.caption">plotting markets…</span></span>
     <div class="templegend" aria-hidden="true">
-      <span class="tl-lab">−20°</span>
+      <span class="tl-lab">≤ −25°</span>
       <span class="tl-bar"></span>
-      <span class="tl-lab">40°C</span>
+      <span class="tl-lab">≥ 44°C</span>
       <span class="tl-src" data-f="temperature.source">current global temperature</span>
     </div>
     <span class="globe-hint">drag to spin · scroll to zoom · click a market</span>
@@ -135,13 +142,23 @@
     <div>
       <div class="eyebrow"><span>Positions</span><span class="eyebrow-rule"></span>
         <span class="eyebrow-n" data-f="positions.count"></span></div>
+      <div class="slot-note" data-f="positions.value"></div>
       <div id="positions-slot"></div>
     </div>
     <div>
       <div class="eyebrow"><span>Settled</span><span class="eyebrow-rule"></span>
         <span class="eyebrow-n" data-f="track.count"></span></div>
+      <div class="slot-note" data-f="track.pnl"></div>
       <div id="track-slot"></div>
     </div>
+  </section>
+
+  <section class="section" aria-labelledby="activity-h">
+    <div class="eyebrow"><span id="activity-h">Activity</span><span class="eyebrow-rule"></span>
+      <span class="eyebrow-n" data-f="activity.count"></span></div>
+    <p class="section-lede">Every entry, exit, and resolution, newest first — the same tape as a
+      Polymarket profile. Buys and sells show the price paid; resolutions show what they returned.</p>
+    <div id="activity-slot"></div>
   </section>
 
   <section class="section" aria-labelledby="rsi-h">
@@ -177,9 +194,9 @@
   </div>
 </footer>
 
-<script src="world.js?v=t10"></script>
-<script src="borders.js?v=t10"></script>
-<script src="globe.js?v=t10"></script>
-<script src="app.js?v=t10"></script>
+<script src="world.js?v=t11"></script>
+<script src="borders.js?v=t11"></script>
+<script src="globe.js?v=t11"></script>
+<script src="app.js?v=t11"></script>
 </body>
 </html>
