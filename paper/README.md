@@ -1,16 +1,32 @@
 # OpenThomas — paper draft
 
-`openthomas.tex` — *The Harness Is the Edge: A Disciplined, Self-Improving
-Language-Model Agent for Weather Prediction Markets.*
+*The Harness Is the Edge: A Disciplined, Self-Improving Language-Model Agent for
+Weather Prediction Markets.*
 
-A venue-neutral draft. It compiles with plain `pdflatex` and only standard CTAN
-packages (no conference `.sty` required), so it can be retargeted at any venue by
-swapping the document class.
+| File | For |
+|---|---|
+| `openthomas.tex` / `.pdf` | venue-neutral draft (plain `article`, retarget by swapping the class) |
+| `openthomas-icaif.tex` / `.pdf` | **ICAIF '26 submission** — `acmart` sigconf, anonymized (double-blind), review line numbers, 5 pp (limit is 8 incl. refs) |
 
 ```bash
 cd paper
-pdflatex openthomas.tex && pdflatex openthomas.tex   # twice for refs
+# either builds with tectonic (self-contained) or a full TeX Live:
+tectonic -X compile openthomas-icaif.tex     # -> openthomas-icaif.pdf
+pdflatex openthomas.tex && pdflatex openthomas.tex   # the venue-neutral one
 ```
+
+## Submitting to ICAIF '26
+
+- **System:** Microsoft CMT — <https://cmt3.research.microsoft.com/ICAIF2026/>
+- **Track:** *Research Papers* (not Competitions / Tutorials / Workshops).
+- **Deadline:** 2026-08-02. **Conference:** Milan, Nov 14–17 2026.
+- **Limit:** ≤ 8 pages **including references**, ACM `sigconf`. Over-length = desk reject.
+- **Double-blind:** the submitted PDF is `openthomas-icaif.pdf` (author masked,
+  URLs withheld). Keep the repo public — ACM allows it — just don't de-anonymize
+  the submission during review.
+- **Camera-ready TODO** (in the `.tex` header): drop the `anonymous`/`review`
+  options, restore `printacmref`, the copyright block, real authors, and the
+  repository / project URLs.
 
 ## Where to submit
 
