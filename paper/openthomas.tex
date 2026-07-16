@@ -49,11 +49,13 @@ model can never override. On top of this, the system improves itself: an
 evolution loop mines its own journal, proposes bounded mutations, and must clear
 a kernel-owned promotion gate on leak-free replay before anything takes effect
 --- with the evaluator structurally off the agent's edit surface, so
-self-improvement cannot redefine ``improvement.'' In a 21-day replay against real
-historical order books with fees, a naked model-vs-market strategy loses
-\$0.038/contract; adding learned station bias, a market-prior blend, and
-timing hygiene walks it, layer by layer, to breakeven --- before any of the
-live-only advantages are switched on. We report the losing numbers as well as
+self-improvement cannot redefine ``improvement.'' In a 21-day leak-free replay
+against real historical order books with fees (968 settled markets, 2026-06-24 to
+07-14), a naked model-vs-market rule barely loses (\$0.007/contract over 425
+trades); adding learned station bias and then a market-prior blend turns
+expectancy positive (\$0.028/contract) by trading less than half as often (184
+trades) --- selectivity, not the model, is the edge, before any of the live-only
+advantages are switched on. We report the losing rows as well as
 the gains, and run the reference agent in public. Our contributions are (i) the
 harness-is-the-edge thesis operationalized as a concrete, reproducible system;
 (ii) a leak-free hindcast/replay evaluation methodology for market agents; and
@@ -391,49 +393,57 @@ it.
 \section{Empirical results}
 \label{sec:results}
 
-We report an ablation from a 21-day replay on real Kalshi order books with fees
-included (Table~\ref{tab:ablation}). We stress that these are small-sample,
+We report an ablation from a 21-day leak-free replay on real Kalshi order books
+with fees included (Table~\ref{tab:ablation}); the window covers 968 settled
+markets with settlement dates from 2026-06-24 to 07-14. These are small-sample,
 paper-mode numbers on a baseline \emph{deliberately stripped} of every live-only
 advantage (same-day model runs, intraday observations, LLM adjustment, and the
 calibration layer); they are an existence proof about \emph{where the edge comes
-from}, not a claim of profitability. The live agent trades with all four
-advantages on, and whether they clear the bar is precisely what the public paper
-run exists to answer.
+from}, not a track record. The live agent trades with all four advantages on, and
+whether they clear the bar is precisely what the public paper run exists to
+answer.
 
 \begin{table}[t]
 \centering
 \small
-\begin{tabular}{@{}p{5.2cm}r@{}}
+\begin{tabular}{@{}p{4.15cm}rrr@{}}
 \toprule
-\textbf{Strategy (21-day replay, fees in)} & \textbf{PnL/contract} \\
+\textbf{Decision rule (21-day replay)} & \textbf{Trades} & \textbf{Win} & \textbf{PnL/ct} \\
 \midrule
-Naked model-vs-market & $-\$0.038$ \\
-\quad $+$ learned station bias $+$ market-prior blend & $-\$0.018$ \\
-\quad\quad $+$ timing-leak fix (low snapshot at 06Z) & $\approx \$0.000$ \\
+Naked model-vs-market & 425 & 41\% & $-\$0.007$ \\
+\quad $+$ learned station bias & 396 & 39\% & $-\$0.005$ \\
+\quad\quad $+$ market-prior blend (production) & 184 & 45\% & $+\$0.028$ \\
 \bottomrule
 \end{tabular}
-\caption{Each layer of discipline is worth $\approx 2$\textcent/contract. The
-naked strategy loses because the market has already priced the morning
-observation --- the harness thesis, confirmed in miniature. Breakeven is reached
-\emph{before} any live-only advantage is counted.}
+\caption{Leak-free replay over 968 settled markets (2026-06-24 to 07-14; fees in;
+timing-safe snapshots --- lows 06Z, highs 15Z; station bias learned strictly
+out-of-window). The market-prior blend more than halves activity
+($425\!\to\!184$ trades) and flips expectancy positive: \emph{selectivity}, not
+the model, is the edge. The naked rule barely clears zero because the late-morning
+book has already priced the day's early observations.}
 \label{tab:ablation}
 \end{table}
 
-Two findings are worth drawing out. First, the naked model-vs-market strategy
-\emph{loses} ($-\$0.038$/contract over 417 trades), because by late morning the
-order book has already digested the day's observations --- exactly the ``the
-model is not the edge'' prediction, borne out on real books. Second, the
-station-bias signal is real and sizable: a 90-day hindcast recovered stable,
-station-specific biases (Miami $+1.8$--$2.1$\textdegree F, Philadelphia $+2.3$,
-Atlanta $+2.0$, LAX $-1$) that persist out-of-sample. Discipline --- learned bias,
-a market blend, and timing hygiene --- is what converts a losing naive strategy
-into a breakeven one; the ablation attributes roughly two cents per contract to
-each layer.
+Two findings are worth drawing out. First, the naked model-vs-market rule
+\emph{loses} ($-\$0.007$/contract over 425 trades): by late morning the order book
+has already digested the day's early observations, so the raw model has almost
+nothing to add --- exactly the ``the model is not the edge'' prediction, borne out
+on real books. Second, the edge is recovered not by a sharper forecast but by
+\emph{selectivity}: blending the model with the market prior more than halves
+activity ($425\!\to\!184$ trades) and flips expectancy to $+\$0.028$/contract at a
+45\% win rate, i.e.\ the surviving trades pay asymmetrically. Learned station bias
+adds a smaller, consistent nudge ($-\$0.007\!\to\!-\$0.005$); the 90-day hindcast
+that supplies it recovers stable, station-specific biases (Miami
+$+1.8$--$2.1$\textdegree F, Philadelphia $+2.3$, LAX $-1$) that persist
+out-of-sample.
 
-We deliberately publish the negative and near-zero numbers. The honest claim is
-narrow and, we think, more useful than a headline return: on weather markets the
-structural edges are \emph{real but small}, discipline is what preserves them, and
-this is the market category where that statement can be checked.
+We report the losing rows next to the positive one, and stress the caveats: 184
+trades over three weeks in paper mode is an existence proof, not a track record,
+and a single window can flatter a rule. The honest claim is narrow and, we think,
+more useful than a headline return: on weather markets the structural edges are
+\emph{real but small}, discipline --- selectivity and blending with the crowd, not
+a smarter model --- is what realizes them, and this is the market category where
+that statement can be checked.
 
 \section{Discussion and limitations}
 
