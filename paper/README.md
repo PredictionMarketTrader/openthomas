@@ -5,14 +5,18 @@ Weather Prediction Markets.*
 
 | File | For |
 |---|---|
-| `openthomas.tex` / `.pdf` | venue-neutral draft (plain `article`, retarget by swapping the class) |
-| `openthomas-icaif.tex` / `.pdf` | **ICAIF '26 submission** — `acmart` sigconf, anonymized (double-blind), review line numbers, 5 pp (limit is 8 incl. refs) |
+| `openthomas.tex` / `.pdf` | venue-neutral signed draft (plain `article`, 7 pp) — build-in-public / arXiv |
+| `openthomas-icaif.tex` / `.pdf` | **ICAIF '26 submission** — `acmart` sigconf, anonymized (double-blind), 5 pp (limit 8 incl. refs) |
+| `openthomas-neurips-ws.tex` / `.pdf` | **NeurIPS '26 workshop version** — RSI-focused, official NeurIPS style, 4 pp incl. refs |
+
+The abstract in all builds is trimmed to <2000 characters (the ICAIF CMT field limit).
 
 ```bash
 cd paper
-# either builds with tectonic (self-contained) or a full TeX Live:
-tectonic -X compile openthomas-icaif.tex     # -> openthomas-icaif.pdf
-pdflatex openthomas.tex && pdflatex openthomas.tex   # the venue-neutral one
+# self-contained with tectonic (drops the TeX bundle on first run):
+tectonic -X compile openthomas-icaif.tex        # -> openthomas-icaif.pdf
+tectonic -X compile openthomas-neurips-ws.tex   # needs neurips_2025.sty (in this dir)
+pdflatex openthomas.tex && pdflatex openthomas.tex
 ```
 
 ## Submitting to ICAIF '26
@@ -27,6 +31,25 @@ pdflatex openthomas.tex && pdflatex openthomas.tex   # the venue-neutral one
 - **Camera-ready TODO** (in the `.tex` header): drop the `anonymous`/`review`
   options, restore `printacmref`, the copyright block, real authors, and the
   repository / project URLs.
+
+## Submitting to a NeurIPS '26 workshop
+
+`openthomas-neurips-ws.pdf` is the RSI thread ("keeping the judge off the edit
+surface") as a 4-page workshop paper.
+
+- **Not the June 6 proposal deadline** — that was for *organizing* a workshop.
+  Papers go to *accepted* workshops as **contributions**: suggested date
+  **2026-08-29**, mandatory accept/reject by 2026-09-29. Each accepted workshop
+  runs its own CFP on OpenReview.
+- **Do now:** create an OpenReview account (approval can take 2+ weeks); watch the
+  accepted-workshop list (published after the 2026-07-11 notification). Targets:
+  Agentic AI / LLM agents, Open-Ended Learning (ALOE), Foundation Models for
+  Decision-Making, ML-for-finance.
+- **Style:** uses `neurips_2025.sty` as a stand-in; swap in the chosen workshop's
+  `neurips_2026.sty`. Options in the `.tex` header: `[preprint]` (named, current),
+  `[dblblindworkshop]` / `[sglblindworkshop]` (blind), `[final]` (camera-ready).
+- **Non-archival:** most NeurIPS workshops allow work also under review elsewhere,
+  so this does not conflict with an ICAIF submission (check each workshop's policy).
 
 ## Where to submit
 
@@ -58,8 +81,9 @@ two.
 
 ## Before submitting
 
-- The replay numbers are a real 21-day run from 2026-07-08; refresh from the live
-  paper run and state the exact window and trade count in the camera-ready.
+- The replay numbers are a real leak-free run over 968 settled markets
+  (settlement 2026-06-24 to 07-14); re-run closer to camera-ready and update the
+  window / trade counts.
 - Fill in full citation details / DOIs in the bibliography (arXiv IDs are stubs).
 - Keep the OSS-hygiene rule: no machine names, IPs, GPU UUIDs, container names, or
   absolute paths anywhere in the PDF.
