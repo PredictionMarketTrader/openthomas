@@ -85,16 +85,20 @@ class Forecast:
 
 
 class ForecastEngine:
-    def __init__(self, config: ModelConfig, calibrate=None, prompt_fn=None, usage_sink=None):
+    def __init__(self, config: ModelConfig, calibrate=None, prompt_fn=None, usage_sink=None,
+                 status_sink=None):
         """`calibrate`: optional fn(p_raw, category) -> p_calibrated from the journal.
         `prompt_fn`: optional fn() -> template text; None/empty falls back to
         the built-in PROMPT. A callable, not a string, so a template promoted
         by the self-improvement loop mid-run takes effect on the next forecast.
-        `usage_sink`: optional fn(Usage) -> None for the token ledger."""
+        `usage_sink`: optional fn(Usage) -> None for the token ledger.
+        `status_sink`: optional fn(node=, active=, model=, reason=) -> None,
+        called on LLM failover transitions (config.forecaster.fallback)."""
         self.config = config
         self.calibrate = calibrate or (lambda p, category: p)
         self.prompt_fn = prompt_fn or (lambda: None)
-        self.client = CompletionClient(config, usage_sink=usage_sink, node="forecast")
+        self.client = CompletionClient(config, usage_sink=usage_sink, node="forecast",
+                                       status_sink=status_sink)
 
     def _complete(self, system: str, user: str) -> str:
         return self.client.complete(system, user)

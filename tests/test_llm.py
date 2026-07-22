@@ -86,6 +86,117 @@ def test_openai_does_not_retry_a_client_error(monkeypatch):
     assert calls["n"] == 1  # no retry on 4xx
 
 
+# --- failover ------------------------------------------------------------------
+
+def _primary_down_backup_up(primary_calls, backup_calls, primary_reply="0.5", backup_reply="0.6"):
+    """Routes a MockTransport by host: primary refuses until `primary_up[0]`
+    is flipped true; backup always answers."""
+    primary_up = [False]
+
+    def handler(request):
+        if str(request.url).startswith("http://primary"):
+            primary_calls.append(1)
+            if not primary_up[0]:
+                raise httpx.ConnectError("connection refused", request=request)
+            return httpx.Response(200, json={"choices": [{"message": {"content": primary_reply}}]})
+        backup_calls.append(1)
+        return httpx.Response(200, json={"choices": [{"message": {"content": backup_reply}}]})
+
+    return handler, primary_up
+
+
+def _failover_config(**kw):
+    return ModelConfig(
+        provider="openai", model="glm-5.2", base_url="http://primary/v1", retries=0,
+        fallback_cooldown_s=300.0,
+        fallback=ModelConfig(provider="openai", model="qwen3.6-27b", base_url="http://backup/v1"),
+        **kw,
+    )
+
+
+def test_no_fallback_configured_still_raises_on_a_dead_endpoint(monkeypatch):
+    """Baseline: without `fallback` set, behavior is exactly what it was before."""
+    monkeypatch.setattr("openthomas.llm.time.sleep", lambda *_: None)
+
+    def handler(request):
+        raise httpx.ConnectError("down", request=request)
+
+    client = CompletionClient(
+        ModelConfig(provider="openai", model="glm-5.2", base_url="http://x/v1", retries=0),
+        http=http_client(handler),
+    )
+    with pytest.raises(httpx.ConnectError):
+        client.complete("s", "u")
+
+
+def test_fails_over_to_backup_once_primary_is_exhausted(monkeypatch):
+    monkeypatch.setattr("openthomas.llm.time.sleep", lambda *_: None)
+    primary_calls, backup_calls = [], []
+    handler, _ = _primary_down_backup_up(primary_calls, backup_calls)
+    client = CompletionClient(_failover_config(), http=http_client(handler))
+
+    assert client.complete("s", "u") == "0.6"
+    assert len(primary_calls) == 1
+    assert len(backup_calls) == 1
+    assert client.status == {"active": "fallback", "model": "qwen3.6-27b"}
+
+
+def test_stays_on_backup_within_cooldown_without_reprobing_primary(monkeypatch):
+    monkeypatch.setattr("openthomas.llm.time.sleep", lambda *_: None)
+    primary_calls, backup_calls = [], []
+    handler, _ = _primary_down_backup_up(primary_calls, backup_calls)
+    client = CompletionClient(_failover_config(), http=http_client(handler))
+
+    client.complete("s", "u")  # fails over
+    assert client.complete("s", "u") == "0.6"  # second call, still within cooldown
+    assert len(primary_calls) == 1  # primary was not re-tried
+    assert len(backup_calls) == 2
+
+
+def test_recovers_to_primary_once_cooldown_elapses_and_primary_answers(monkeypatch):
+    """The whole point: failover must not be sticky. Once the primary is back
+    up and the cooldown has elapsed, the next call switches back on its own —
+    nobody has to flip it back by hand."""
+    monkeypatch.setattr("openthomas.llm.time.sleep", lambda *_: None)
+    clock = {"t": 0.0}
+    monkeypatch.setattr("openthomas.llm.time.monotonic", lambda: clock["t"])
+    primary_calls, backup_calls = [], []
+    handler, primary_up = _primary_down_backup_up(primary_calls, backup_calls)
+    client = CompletionClient(_failover_config(), http=http_client(handler))
+
+    assert client.complete("s", "u") == "0.6"  # primary down -> fails over
+    assert client.status["active"] == "fallback"
+
+    clock["t"] += 100  # within the 300s cooldown — stays on backup
+    assert client.complete("s", "u") == "0.6"
+    assert client.status["active"] == "fallback"
+
+    primary_up[0] = True
+    clock["t"] += 300  # cooldown elapsed — probes primary again
+    assert client.complete("s", "u") == "0.5"
+    assert client.status == {"active": "primary", "model": "glm-5.2"}
+
+
+def test_status_sink_fires_only_on_transitions_not_every_call(monkeypatch):
+    monkeypatch.setattr("openthomas.llm.time.sleep", lambda *_: None)
+    clock = {"t": 0.0}
+    monkeypatch.setattr("openthomas.llm.time.monotonic", lambda: clock["t"])
+    events = []
+    handler, primary_up = _primary_down_backup_up([], [])
+    client = CompletionClient(_failover_config(), http=http_client(handler), node="forecast",
+                              status_sink=lambda **kw: events.append(kw))
+
+    client.complete("s", "u")  # primary -> fallback: one event
+    client.complete("s", "u")  # still degraded, no probe due yet: no new event
+    assert [e["active"] for e in events] == ["fallback"]
+    assert events[0]["node"] == "forecast"
+
+    primary_up[0] = True
+    clock["t"] += 300
+    client.complete("s", "u")  # fallback -> primary: one more event
+    assert [e["active"] for e in events] == ["fallback", "primary"]
+
+
 def test_anthropic_provider_hits_messages():
     def handler(request):
         assert request.url.path == "/v1/messages"

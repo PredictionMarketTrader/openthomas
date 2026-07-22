@@ -90,6 +90,8 @@ def _print_report(report) -> None:
         console.print(f"  [magenta]ARB?[/magenta] {a}")
     for r in report.rejections[:8]:
         console.print(f"  [dim]skip: {r}[/dim]")
+    for d in report.degraded:
+        console.print(f"  [yellow]FAILOVER[/yellow] {d}")
     if report.halted:
         console.print("[red bold]KILL-SWITCH: max drawdown reached. Trading halted — "
                       "review the journal, then delete peak_value to resume.[/red bold]")

@@ -21,6 +21,7 @@ from ..markets.kalshi import KalshiConnector
 from ..markets.paper import InsufficientLiquidity, PaperBroker
 from ..markets.polymarket import PolymarketConnector
 from ..memory.board import Board
+from ..memory.failover import FailoverLog
 from ..memory.heartbeat import Heartbeat
 from ..memory.journal import Journal
 from ..memory.lessons import LessonBook
@@ -43,6 +44,7 @@ class CycleReport:
     account_value: float = 0.0
     cash: float = 0.0
     halted: bool = False
+    degraded: list[str] = field(default_factory=list)  # "<node>: on fallback (<model>)"
 
 
 def build_connectors(platforms: list[str]) -> dict[str, MarketConnector]:
@@ -64,11 +66,14 @@ class Agent:
         self.usage = UsageLedger(settings.home)
         self.heartbeat = Heartbeat(settings.home)
         self.board = Board(settings.home)
+        self.failover = FailoverLog(settings.home)
         self.forecaster = ForecastEngine(settings.forecaster, calibrate=self._calibrate,
                                          prompt_fn=lambda: settings.forecast_prompt,
-                                         usage_sink=self.usage.record)
+                                         usage_sink=self.usage.record,
+                                         status_sink=self.failover.record)
         self.reflector = CompletionClient(settings.reflector or settings.forecaster,
-                                          usage_sink=self.usage.record, node="reflect")
+                                          usage_sink=self.usage.record, node="reflect",
+                                          status_sink=self.failover.record)
         self.news = NewsDesk() if settings.news_enabled else None
         from ..weather.localmodels import LocalModelSource
         from ..weather.gencast import GencastSpread
@@ -284,7 +289,13 @@ class Agent:
             )
 
         self.journal.record_cycle(state.account_value, state.cash, len(state.positions))
+        report.degraded = self._degraded_nodes()
         return report
+
+    def _degraded_nodes(self) -> list[str]:
+        nodes = {"forecaster": self.forecaster.client.status, "reflector": self.reflector.status}
+        return [f"{node}: on fallback ({s['model']})"
+                for node, s in nodes.items() if s["active"] != "primary"]
 
     def reflect(self) -> str:
         return self.lessons.reflect(self.journal, self.reflector.complete)

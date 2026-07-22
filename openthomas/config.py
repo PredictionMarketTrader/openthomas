@@ -84,6 +84,18 @@ class ModelConfig(BaseModel):
     # Extra JSON merged into OpenAI-compatible request bodies — e.g. vLLM's
     # chat_template_kwargs to toggle a model's thinking mode.
     extra_body: dict = Field(default_factory=dict)
+    # A second endpoint to serve from once this one's retries are exhausted —
+    # e.g. a hosted API standing in while a local vLLM box is down. Any
+    # provider/model combination works; it is itself a ModelConfig, so it can
+    # chain further (though one level covers every real case so far). None
+    # (default) disables failover: a dead endpoint just fails the sample, as
+    # it always did.
+    fallback: "ModelConfig | None" = None
+    # Once failed over, how long to keep serving from `fallback` before
+    # probing this endpoint again. Short enough to notice a restart within a
+    # cycle or two, long enough that a still-dead primary doesn't add its
+    # full retry budget's latency to every sample.
+    fallback_cooldown_s: float = 300.0
 
     @property
     def api_key(self) -> str | None:

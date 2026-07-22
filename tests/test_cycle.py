@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from openthomas.agent.loop import Agent
-from openthomas.config import Settings
+from openthomas.config import ModelConfig, Settings
 from openthomas.markets.base import Market
 
 
@@ -98,3 +98,14 @@ def test_a_thin_high_gap_market_wins_the_budget_over_a_busy_agreeing_one(tmp_pat
     assert [m.id for m in result.candidates] == ["thin", "busy"]
     # and the shared cache means each was assessed once, available to the loop
     assert set(cache) == {"busy", "thin"}
+
+
+def test_degraded_nodes_is_empty_when_both_are_on_primary(tmp_path):
+    assert agent(tmp_path)._degraded_nodes() == []
+
+
+def test_degraded_nodes_reports_a_node_that_failed_over(tmp_path):
+    a = agent(tmp_path)
+    a.forecaster.client.config.fallback = ModelConfig(model="qwen3.6-27b")
+    a.forecaster.client._active = "fallback"
+    assert a._degraded_nodes() == ["forecaster: on fallback (qwen3.6-27b)"]

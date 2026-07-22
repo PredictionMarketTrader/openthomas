@@ -19,6 +19,7 @@ import random
 import re
 import subprocess
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -55,60 +56,128 @@ class CompletionError(RuntimeError):
 
 class CompletionClient:
     def __init__(self, config: ModelConfig, http: httpx.Client | None = None,
-                 run=subprocess.run, usage_sink=None, node: str = ""):
+                 run=subprocess.run, usage_sink=None, node: str = "", status_sink=None):
         """`usage_sink`: optional fn(Usage) -> None, called once per completion.
-        `node` labels the caller in that ledger (forecast | reflect | …)."""
+        `node` labels the caller in that ledger (forecast | reflect | …).
+        `status_sink`: optional fn(node=, active=, model=, reason=) -> None,
+        called once per failover transition (primary→fallback or back)."""
         self.config = config
         self.http = http or httpx.Client(timeout=config.timeout_s)
         self.run = run  # injectable for tests
         self.usage_sink = usage_sink
         self.node = node
+        self.status_sink = status_sink
+        # Failover state. "primary" until config.fallback is set and a call
+        # fails; while "fallback", every call is served from config.fallback
+        # except a periodic probe of the primary once fallback_cooldown_s has
+        # elapsed, so recovery is automatic — nothing needs to switch it back
+        # by hand once the primary is healthy again.
+        self._lock = threading.Lock()
+        self._active = "primary"
+        self._next_probe_at = 0.0  # time.monotonic() deadline; 0 = probe now
 
-    def _record(self, prompt_tokens=None, completion_tokens=None, cached_tokens=None) -> None:
+    @property
+    def status(self) -> dict:
+        """Current failover state: {"active": "primary"|"fallback", "model": ...}."""
+        with self._lock:
+            active = self._active
+        cfg = self.config if active == "primary" else self.config.fallback
+        return {"active": active, "model": cfg.model if cfg else self.config.model}
+
+    def _record(self, cfg: ModelConfig, prompt_tokens=None, completion_tokens=None,
+                cached_tokens=None) -> None:
         if self.usage_sink is None:
             return
         self.usage_sink(Usage(
-            ts=now(), node=self.node, provider=self.config.provider,
-            model=self.config.model, prompt_tokens=prompt_tokens,
+            ts=now(), node=self.node, provider=cfg.provider,
+            model=cfg.model, prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens, cached_tokens=cached_tokens,
         ))
 
     def complete(self, system: str, user: str) -> str:
-        c = self.config
-        if c.provider == "anthropic":
-            return self._anthropic(system, user)
-        if c.provider == "openai":
-            return self._openai(system, user)
-        if c.provider == "claude-cli":
-            return self._claude_cli(system, user)
-        if c.provider == "codex-cli":
-            return self._codex_cli(system, user)
+        fb = self.config.fallback
+        if fb is None:
+            return self._dispatch(self.config, system, user)
+
+        if self._claim_primary_attempt():
+            try:
+                result = self._dispatch(self.config, system, user)
+            except (httpx.HTTPError, CompletionError) as e:
+                self._enter_fallback(str(e))
+            else:
+                self._enter_primary()
+                return result
+        return self._dispatch(fb, system, user)
+
+    # --- failover bookkeeping -----------------------------------------------------
+    def _claim_primary_attempt(self) -> bool:
+        """True if this call should try the primary: always while healthy, or
+        once per cooldown window while degraded. Claims that window itself
+        (advances the deadline before the attempt runs) so concurrent
+        ensemble samples don't all re-probe a still-dead primary at once."""
+        with self._lock:
+            if self._active == "primary":
+                return True
+            now_ = time.monotonic()
+            if now_ < self._next_probe_at:
+                return False
+            self._next_probe_at = now_ + self.config.fallback_cooldown_s
+            return True
+
+    def _enter_fallback(self, reason: str) -> None:
+        with self._lock:
+            was_primary = self._active == "primary"
+            self._active = "fallback"
+            self._next_probe_at = max(
+                self._next_probe_at, time.monotonic() + self.config.fallback_cooldown_s)
+        if was_primary and self.status_sink:
+            self.status_sink(node=self.node, active="fallback",
+                             model=self.config.fallback.model, reason=reason)
+
+    def _enter_primary(self) -> None:
+        with self._lock:
+            recovered = self._active == "fallback"
+            self._active = "primary"
+            self._next_probe_at = 0.0
+        if recovered and self.status_sink:
+            self.status_sink(node=self.node, active="primary",
+                             model=self.config.model, reason="primary recovered")
+
+    def _dispatch(self, cfg: ModelConfig, system: str, user: str) -> str:
+        if cfg.provider == "anthropic":
+            return self._anthropic(cfg, system, user)
+        if cfg.provider == "openai":
+            return self._openai(cfg, system, user)
+        if cfg.provider == "claude-cli":
+            return self._claude_cli(cfg, system, user)
+        if cfg.provider == "codex-cli":
+            return self._codex_cli(cfg, system, user)
         raise ValueError(
-            f"unknown LLM provider {c.provider!r}; "
+            f"unknown LLM provider {cfg.provider!r}; "
             "use anthropic | openai | claude-cli | codex-cli"
         )
 
     # --- HTTP providers ----------------------------------------------------------
-    def _post(self, url: str, headers: dict, payload: dict) -> dict:
+    def _post(self, cfg: ModelConfig, url: str, headers: dict, payload: dict) -> dict:
         """POST with bounded retry, so a restarting endpoint is waited out, not
         dropped. Retries connection errors and RETRY_STATUS responses with
         exponential backoff; re-raises the last error once retries run out so
-        the caller (forecaster, reflector) skips the sample as it always has.
+        the caller (forecaster, reflector) skips the sample — or fails over —
+        as it always did.
 
         Local reasoning servers go away for tens of seconds when they reload a
         model or recover from an OOM. Without this, every forecast in that
         window returns None and the cycle trades nothing; with it, the sample
         blocks a few seconds and succeeds the moment the server is back."""
-        c = self.config
         last: Exception | None = None
-        for attempt in range(max(c.retries, 0) + 1):
+        for attempt in range(max(cfg.retries, 0) + 1):
             if attempt:
                 # jitter breaks the lockstep of an N-sample ensemble all
                 # retrying against the same recovering server at once.
-                delay = min(c.retry_backoff_s * 2 ** (attempt - 1), c.retry_max_s)
+                delay = min(cfg.retry_backoff_s * 2 ** (attempt - 1), cfg.retry_max_s)
                 time.sleep(delay * (0.7 + 0.6 * random.random()))
             try:
-                resp = self.http.post(url, headers=headers, json=payload)
+                resp = self.http.post(url, headers=headers, json=payload, timeout=cfg.timeout_s)
                 resp.raise_for_status()
                 return resp.json()
             except httpx.HTTPStatusError as e:
@@ -119,37 +188,38 @@ class CompletionClient:
                 last = e  # connect refused / timeout / reset — the server may be back soon
         raise last  # type: ignore[misc]
 
-    def _anthropic(self, system: str, user: str) -> str:
-        c = self.config
+    def _anthropic(self, cfg: ModelConfig, system: str, user: str) -> str:
         body = self._post(
-            (c.base_url or "https://api.anthropic.com") + "/v1/messages",
-            {"x-api-key": c.api_key or "", "anthropic-version": "2023-06-01"},
+            cfg,
+            (cfg.base_url or "https://api.anthropic.com") + "/v1/messages",
+            {"x-api-key": cfg.api_key or "", "anthropic-version": "2023-06-01"},
             {
-                "model": c.model, "max_tokens": c.max_tokens, "temperature": c.temperature,
+                "model": cfg.model, "max_tokens": cfg.max_tokens, "temperature": cfg.temperature,
                 "system": system, "messages": [{"role": "user", "content": user}],
             },
         )
         u = body.get("usage") or {}
-        self._record(u.get("input_tokens"), u.get("output_tokens"),
+        self._record(cfg, u.get("input_tokens"), u.get("output_tokens"),
                      u.get("cache_read_input_tokens"))
         return body["content"][0]["text"]
 
-    def _openai(self, system: str, user: str) -> str:
+    def _openai(self, cfg: ModelConfig, system: str, user: str) -> str:
         body = self._post(
-            (self.config.base_url or "https://api.openai.com/v1") + "/chat/completions",
-            {"Authorization": f"Bearer {self.config.api_key or 'local'}"},
+            cfg,
+            (cfg.base_url or "https://api.openai.com/v1") + "/chat/completions",
+            {"Authorization": f"Bearer {cfg.api_key or 'local'}"},
             {
-                "model": self.config.model, "temperature": self.config.temperature,
-                "max_tokens": self.config.max_tokens,
+                "model": cfg.model, "temperature": cfg.temperature,
+                "max_tokens": cfg.max_tokens,
                 "messages": [
                     {"role": "system", "content": system},
                     {"role": "user", "content": user},
                 ],
-                **self.config.extra_body,
+                **cfg.extra_body,
             },
         )
         u = body.get("usage") or {}
-        self._record(u.get("prompt_tokens"), u.get("completion_tokens"),
+        self._record(cfg, u.get("prompt_tokens"), u.get("completion_tokens"),
                      (u.get("prompt_tokens_details") or {}).get("cached_tokens"))
         msg = body["choices"][0]["message"]
         # Reasoning models (GLM, DeepSeek) may return content=null when the
@@ -157,45 +227,43 @@ class CompletionClient:
         return msg.get("content") or msg.get("reasoning_content") or msg.get("reasoning") or ""
 
     # --- subscription CLI providers ------------------------------------------------
-    def _run_cli(self, cmd: list[str], stdin: str) -> subprocess.CompletedProcess:
+    def _run_cli(self, cfg: ModelConfig, cmd: list[str], stdin: str) -> subprocess.CompletedProcess:
         try:
             proc = self.run(cmd, input=stdin, capture_output=True, text=True,
-                            timeout=self.config.timeout_s)
+                            timeout=cfg.timeout_s)
         except FileNotFoundError:
             raise CompletionError(
                 f"{cmd[0]!r} not found — install it and log in once, or switch provider"
             ) from None
         except subprocess.TimeoutExpired:
-            raise CompletionError(f"{cmd[0]} timed out after {self.config.timeout_s}s") from None
+            raise CompletionError(f"{cmd[0]} timed out after {cfg.timeout_s}s") from None
         if proc.returncode != 0:
             raise CompletionError(f"{cmd[0]} exited {proc.returncode}: {proc.stderr[:300]}")
-        self._record()  # subscription CLIs report no token counts
+        self._record(cfg)  # subscription CLIs report no token counts
         return proc
 
-    def _claude_cli(self, system: str, user: str) -> str:
+    def _claude_cli(self, cfg: ModelConfig, system: str, user: str) -> str:
         """`claude -p`: temperature/max_tokens don't apply; model may be an
         alias like 'sonnet' or empty for the CLI's default."""
-        c = self.config
-        cmd = [c.command or "claude", "-p", "--output-format", "text",
+        cmd = [cfg.command or "claude", "-p", "--output-format", "text",
                "--system-prompt", system]
-        if c.model:
-            cmd += ["--model", c.model]
-        return self._run_cli(cmd, user).stdout.strip()
+        if cfg.model:
+            cmd += ["--model", cfg.model]
+        return self._run_cli(cfg, cmd, user).stdout.strip()
 
-    def _codex_cli(self, system: str, user: str) -> str:
+    def _codex_cli(self, cfg: ModelConfig, system: str, user: str) -> str:
         """`codex exec`: no system-prompt flag, so prepend it; the final
         answer is read from --output-last-message (stdout carries the
         session log)."""
-        c = self.config
         with tempfile.NamedTemporaryFile(prefix="openthomas-codex-", suffix=".txt",
                                          delete=False) as f:
             out_path = Path(f.name)
         try:
-            cmd = [c.command or "codex", "exec", "--skip-git-repo-check",
+            cmd = [cfg.command or "codex", "exec", "--skip-git-repo-check",
                    "-s", "read-only", "-o", str(out_path)]
-            if c.model:
-                cmd += ["-m", c.model]
-            self._run_cli(cmd, f"{system}\n\n{user}" if system else user)
+            if cfg.model:
+                cmd += ["-m", cfg.model]
+            self._run_cli(cfg, cmd, f"{system}\n\n{user}" if system else user)
             answer = out_path.read_text().strip()
         finally:
             out_path.unlink(missing_ok=True)
