@@ -18,8 +18,14 @@ LOG="${OPENTHOMAS_LOG:-$HOME/.openthomas/agent.log}"
 # anyway. The watchdog never starts us while the flag exists, so it cannot clear it
 # by accident.
 HALT="${OPENTHOMAS_HALT_FILE:-$HOME/.openthomas/halted}"
-mkdir -p "$(dirname "$LOG")" "$(dirname "$HALT")"
+# Who we are, so the watchdog can ask a precise question instead of scanning every
+# process on the box for a string. Removed on the way out, so its absence is a real
+# signal rather than something the watchdog has to guess at.
+PIDFILE="${OPENTHOMAS_PIDFILE:-$HOME/.openthomas/supervisor.pid}"
+mkdir -p "$(dirname "$LOG")" "$(dirname "$HALT")" "$(dirname "$PIDFILE")"
 rm -f "$HALT"
+printf '%s\n' "$$" >"$PIDFILE"
+trap 'rm -f "$PIDFILE"' EXIT
 echo "[$(date -Is)] supervisor start (pid $$)" >>"$LOG"
 
 while true; do
