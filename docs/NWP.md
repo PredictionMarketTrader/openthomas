@@ -130,8 +130,10 @@ On the trading box, one cron line runs the whole thing. The 15-minute interval i
 the *probe* rate, not the compute rate — see the state machine above:
 
 ```cron
-*/15 * * * * cd ~/projects/openthomas && scripts/nwp/run_remote.sh "" --batch >> ~/.openthomas/nwp-cron.log 2>&1
+*/15 * * * * /path/to/openthomas/scripts/nwp/run_remote.sh "" --batch >> ~/.openthomas/nwp-cron.log 2>&1
 ```
+
+No `cd` needed — `run_remote.sh` resolves the repo from its own path.
 
 The empty first argument means "take the host from `~/.openthomas/nwp.env`", which
 is also where the link's characteristics live (`OPENTHOMAS_NWP_PROXY=0` for a
