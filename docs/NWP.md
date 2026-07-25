@@ -45,9 +45,67 @@ ai-models ignores). (2) GenCast is **GPU-only** — the sampler does
 
 ## Cadence & placement
 
-- **GraphCast** — run **2×/day** (00z + 12z open-data). CPU box or a ≥32 GB GPU.
-- **GenCast** — run **1×/day** (00z), small ensemble (8–16 members), on a large
-  GPU.
+**The trigger is data, not the clock.** GenCast initialises from ERA5, which CDS
+publishes once a day; until a new reanalysis day exists there is nothing to
+compute. And when one does exist, the only thing between us and a forecast is a
+free card on a box we share with training jobs. So the trading box — which owns
+no GPU worth the name — reaches across to the compute box over ssh every 15
+minutes, and `nwp_batch.sh` decides what that means:
+
+```
+   new ERA5 day?  ──no──▶  idle   (the common case: one date comparison,
+         │yes                      no network, no nvidia-smi, no noise)
+         ▼
+   free card?     ──no──▶  retry in 15 min   (never evict another tenant;
+         │yes                                 a busy box only costs us time)
+         ▼
+   GenCast on the LATEST ERA5  +  GraphCast on the latest open-data cycle
+         │
+         ▼  record the ERA5 day, return to idle until the next one
+```
+
+```
+trading box  ──ssh, every 15 min──▶  compute box (8×A800)
+  cron: run_remote.sh <host> --batch             nwp_batch.sh
+                                                   ├─ GenCast   (ERA5/CDS, ~9 GB)
+                                                   └─ GraphCast (open-data, ~34 GB)
+  ◀── gencast-spread.json · rows.jsonl · tempgrid · tempseries
+```
+
+Three properties this buys, each of which a fixed daily slot gets wrong:
+
+- **The ERA5 day is resolved when the card is won, not when the hunt began.** If
+  the box stays busy for two days we don't then compute a two-day-old forecast —
+  we compute the current one, late.
+- **Nothing is recomputed.** A successful run records its ERA5 day and the script
+  goes idle; without that guard, a 15-minute probe would spend hours of A800
+  reproducing byte-identical output from an unchanged reanalysis file.
+- **Failures back off instead of spinning.** A failed attempt (CDS outage, ERA5
+  not published yet at our assumed lag) waits an hour rather than re-queuing a
+  request every quarter hour, and writes no stamp — so the hunt resumes by itself.
+
+**GraphCast rides along.** Its own input refreshes every 6 h, so coupling it to
+ERA5 costs some freshness; but holding a free card and *not* spending the ~10
+minutes to refresh the site's temperature field costs more. It is re-probed
+separately at 36 GB, so a card with room for the ensemble but not for GraphCast
+still delivers the spread the new reanalysis day exists to give us.
+
+**Nothing about the run is pinned.** GraphCast takes the latest open-data cycle
+implicitly; GenCast is handed today minus `OPENTHOMAS_ERA5_LAG_DAYS` (6). The card
+is chosen the same way — at run time, by UUID (`gpu.sh`) — because a UUID baked
+into config sends inference at whatever tenant owns that index today.
+
+A probe that finds a busy box exits 0. It should read as quiet, not broken.
+
+Both models run **serially** and under an `flock`, so a slow run (CDS queues ERA5
+requests for many minutes) can never be lapped by the next probe. They share
+`~/.cache/ai-models/constants-0p25.grib2.tmp`, and racing them deletes each
+other's temp file mid-download.
+
+Downstream, `GencastSpread` treats a run older than `FRESHNESS_HOURS = 30` as
+stale and falls back to a 1.0 sigma multiplier. So a hunt that goes unfed for more
+than ~30 h degrades the desk to climatological sigma rather than letting it trust
+stale spread — safe, but blind, and worth noticing in the log.
 
 Data hygiene note: `ai-models`'s open-data client is pinned to the AWS mirror (the
 ECMWF portal rate-limits) and to the `oper` stream for every cycle (06/18z are
@@ -58,9 +116,33 @@ served as oper now; GenCast/GraphCast need the t−6h step, which always lands o
 
 ```
 setup_graphcast_env.sh   # build the pinned venv + weights + patches (once)
+setup_gencast_env.sh     # same for GenCast (one venv can serve both plugins)
+gpu.sh                   # pick a free card by UUID, or report none
+nwp_batch.sh             # the state machine above; runs ON the compute box
 run_graphcast.sh         # one inference → GRIB (CPU default, --gpu for a big card)
+run_gencast.sh           # one ensemble → GRIB (GPU only; date defaults to ERA5 lag)
 extract_stations.py      # GRIB → station high/low rows + tempgrid/tempseries JSON
-run_remote.sh <host>     # orchestrate on a compute box, pull artifacts back
+extract_gencast.py       # ensemble GRIB → per-station spread JSON
+run_remote.sh <host>     # drive a compute box over ssh, pull artifacts back
+```
+
+On the trading box, one cron line runs the whole thing. The 15-minute interval is
+the *probe* rate, not the compute rate — see the state machine above:
+
+```cron
+*/15 * * * * cd ~/projects/openthomas && scripts/nwp/run_remote.sh "" --batch >> ~/.openthomas/nwp-cron.log 2>&1
+```
+
+The empty first argument means "take the host from `~/.openthomas/nwp.env`", which
+is also where the link's characteristics live (`OPENTHOMAS_NWP_PROXY=0` for a
+compute box with its own clean route to ECMWF/CDS — borrowing the trading box's
+exit over a ~1 MB/s link would be far slower than letting it fetch its own initial
+conditions).
+
+To see what the state machine thinks without running anything:
+
+```
+ssh <compute-box> 'bash ~/openthomas/scripts/nwp/nwp_batch.sh --status'
 ```
 
 The station rows join the multi-model consensus through `LocalModelSource` (scored

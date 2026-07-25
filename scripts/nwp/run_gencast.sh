@@ -21,15 +21,36 @@
 #                     territory), does NOT fit a single 80GB A800; avoid on GPU.
 #
 #   run_gencast.sh [members] [date YYYYMMDD] [time HHMM] [lead_h] [model]
+#
+# The date defaults to today minus OPENTHOMAS_ERA5_LAG_DAYS (6) so a daily cron
+# always initialises from the freshest reanalysis CDS actually has, instead of
+# drifting behind a hardcoded date. Pass one explicitly for a specific hindcast.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"  # resolve before any cd
 GCX_HOME="${OPENTHOMAS_GENCAST_HOME:-$HOME/.openthomas/gencast}"
 VENV="$GCX_HOME/venv-gc"
+LAG_DAYS="${OPENTHOMAS_ERA5_LAG_DAYS:-6}"
 MEMBERS="${1:-8}"; DATE="${2:-}"; TIME="${3:-0000}"; LEAD="${4:-168}"; MODEL="${5:-gencast-1.0}"
-[ -z "$DATE" ] && { echo "usage: run_gencast.sh <members> <YYYYMMDD (>=~5 days back)> [HHMM] [lead_h] [model]"; exit 2; }
+[ -z "$DATE" ] && DATE="$(date -u -d "$LAG_DAYS days ago" +%Y%m%d)"
 
-# Pin to the configured GPU (UUID survives index reshuffles on a shared box).
-if [ -n "${OPENTHOMAS_GENCAST_GPU_UUID:-}" ]; then export CUDA_VISIBLE_DEVICES="$OPENTHOMAS_GENCAST_GPU_UUID"; fi
+# Pick a card at run time: on a shared box the free card differs between runs, and
+# a stale pin sends the ensemble at whatever tenant now owns that index. We never
+# evict anyone to make room — no card means abort and try again later. An explicit
+# OPENTHOMAS_GENCAST_GPU_UUID wins, which is how nwp_batch.sh hands over the card
+# it already found free.
+if [ -n "${OPENTHOMAS_GENCAST_GPU_UUID:-}" ] && [ "${OPENTHOMAS_GENCAST_GPU_UUID}" != auto ]; then
+  export CUDA_VISIBLE_DEVICES="$OPENTHOMAS_GENCAST_GPU_UUID"
+else
+  . "$SCRIPT_DIR/gpu.sh"
+  NEED_GB="${OPENTHOMAS_GENCAST_NEED_GB:-12}"   # 1.0° measured ~9.5GB; leave room
+  uuid="$(nwp_free_gpu "$NEED_GB")"   # empty stdout, not a bad exit, means none
+  [ -n "$uuid" ] || {
+    echo "[$(date -Is)] no card with ${NEED_GB}GB free for GenCast — aborting" >&2
+    exit 1
+  }
+  export CUDA_VISIBLE_DEVICES="$uuid"
+  echo "[$(date -Is)] picked a free GPU: $uuid"
+fi
 export XLA_PYTHON_CLIENT_PREALLOCATE=false  # allocate on demand, use the whole card
 
 WORK="$GCX_HOME/runs/$(date -u +%Y%m%dT%H%M%S)"; mkdir -p "$WORK"; cd "$WORK"
