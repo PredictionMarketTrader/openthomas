@@ -14,20 +14,28 @@ exec 9>"$LOCK"
 flock -n 9 || exit 0  # a previous run is still mid-restart; skip this tick
 
 LOG="${OPENTHOMAS_LOG:-$HOME/.openthomas/agent.log}"
-# Our own chatter goes to a separate file and never into $LOG. Writing it there
-# would walk the kill-switch line out of the 20-line window scanned below: one
-# message per tick means that after 20 ticks an intentional halt looks like an
-# ordinary crash, and we would restart an agent a human was supposed to review
-# first. Keeping $LOG free of our writes makes it quiescent once the supervisor
-# exits, so its tail stays a stable record of why it stopped.
+# Our own chatter goes to a separate file and never into $LOG, so $LOG stays
+# quiescent once the supervisor exits and its tail remains a stable record of why.
 WLOG="${OPENTHOMAS_WATCHDOG_LOG:-$HOME/.openthomas/watchdog.log}"
+# Explicit state written by paper_run.sh on a kill-switch exit, and cleared when a
+# human restarts it. This is the authoritative signal.
+HALT="${OPENTHOMAS_HALT_FILE:-$HOME/.openthomas/halted}"
 
 if pgrep -f "[p]aper_run\.sh" >/dev/null; then
   exit 0  # supervisor alive, nothing to do
 fi
 
+if [ -f "$HALT" ]; then
+  echo "[$(date -Is)] watchdog: halt flag present — kill-switch stop, not auto-restarting; review the journal, then start paper_run.sh" >>"$WLOG"
+  exit 0
+fi
+
+# Second line of defence for the case where this watchdog is newer than the
+# paper_run.sh beside it, which would halt without writing the flag. Restarting an
+# agent the kill-switch deliberately stopped is the one mistake here worth being
+# paranoid about, so a stale pairing should fail closed rather than open.
 if [ -f "$LOG" ] && tail -n 20 "$LOG" | grep -q "drawdown kill-switch"; then
-  echo "[$(date -Is)] watchdog: supervisor down on the drawdown kill-switch — not auto-restarting, needs manual review" >>"$WLOG"
+  echo "[$(date -Is)] watchdog: kill-switch in the log but no halt flag — not auto-restarting; check that paper_run.sh is current" >>"$WLOG"
   exit 0
 fi
 
