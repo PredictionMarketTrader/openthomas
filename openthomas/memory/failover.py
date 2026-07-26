@@ -36,6 +36,22 @@ class FailoverLog:
         except OSError:
             pass
 
+    def clear(self) -> None:
+        """Drop everything the last run recorded. Called once when a run starts.
+
+        Entries are written only on a transition, and a fresh process starts out
+        on its primary — so a run that never fails over writes nothing, and last
+        run's entries would sit here reading like current state. That is worse
+        than no file at all: after an operator fixes a dead endpoint and
+        restarts, this would still name the fallback, and the natural check —
+        does the status say primary yet — answers no forever. Absent means
+        healthy (see record()), so starting empty says exactly what is true at
+        startup, and a node reappears here only if it fails over for real."""
+        try:
+            self.path.unlink()
+        except OSError:
+            pass  # never existed, or unwritable — same story either way
+
 
 def read(home: Path | str) -> dict:
     """{node: {active, model, reason, since}, …} — {} if nothing has ever failed over."""

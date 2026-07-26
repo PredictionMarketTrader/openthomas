@@ -344,6 +344,7 @@ class Agent:
 
     def run_forever(self, on_report=None) -> CycleReport:
         self.heartbeat.start()
+        self.failover.clear()  # last run's endpoint status is not this run's
         while True:
             report = self.cycle()
             self.heartbeat.beat()  # proves the loop is live and dates this run

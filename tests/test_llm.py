@@ -355,3 +355,40 @@ def test_only_provably_private_addresses_are_forced_direct():
     assert direct_mounts(None) == {}
     assert direct_mounts(ModelConfig(base_url=None)) == {}
 
+
+# --- failover status file ---------------------------------------------------
+
+def test_clear_drops_last_runs_endpoint_status(tmp_path):
+    """Absent means healthy, so clearing is how a run says "nothing has failed
+    over yet" — and the log must still be usable afterwards."""
+    from openthomas.memory.failover import FailoverLog, read
+
+    log = FailoverLog(tmp_path)
+    log.record("forecast", "fallback", "backup", reason="503")
+    assert read(tmp_path)["forecast"]["active"] == "fallback"
+
+    log.clear()
+    assert read(tmp_path) == {}
+
+    log.record("reflect", "fallback", "backup", reason="503")
+    assert set(read(tmp_path)) == {"reflect"}
+
+
+def test_a_new_run_does_not_inherit_the_last_runs_failover_status(tmp_path):
+    """Status is written only on a transition, and a fresh process starts on its
+    primary — so a run that never fails over writes nothing here. Left alone,
+    last run's entry would read as current state: an operator who repaired the
+    endpoint and restarted would check this file and be told, forever, that the
+    agent is still riding its fallback."""
+    from openthomas.agent.loop import Agent, CycleReport
+    from openthomas.config import Settings
+    from openthomas.memory.failover import read
+
+    agent = Agent(Settings(home=tmp_path, news_enabled=False))
+    agent.failover.record("forecast", "fallback", "backup", reason="503")
+    assert read(tmp_path)["forecast"]["active"] == "fallback"  # the dead run's word
+
+    agent.cycle = lambda: CycleReport(halted=True)  # one pass, then return
+    agent.run_forever()
+
+    assert read(tmp_path) == {}
