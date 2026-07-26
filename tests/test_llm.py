@@ -308,3 +308,50 @@ def test_forecast_is_attributed_to_the_model_that_actually_answered(monkeypatch)
 
     forecast = engine.forecast(m)
     assert forecast.model == "qwen3.6-27b"  # not cfg.model ("glm-5.2")
+
+
+# --- proxy routing ----------------------------------------------------------
+
+def _pool(client, url):
+    """Which pool httpx would dial `url` through — a proxy one, or a direct one."""
+    transport = client.http._transport_for_url(httpx.URL(url))
+    return type(getattr(transport, "_pool", None)).__name__
+
+
+def test_lan_model_endpoint_bypasses_the_outbound_proxy(monkeypatch):
+    """A no_proxy CIDR does not cover the hosts inside it: httpx matches those
+    entries as literal hostnames, so 10.0.0.0/24 never matches 10.0.0.7 and a
+    LAN vLLM gets dialled through the internet proxy, which answers 503. The
+    agent then reads that as its primary being down and rides the fallback
+    model for hours. Private endpoints must go direct — while the proxy stays
+    in force for everything else, which is the only reason this box has one."""
+    monkeypatch.setenv("http_proxy", "http://127.0.0.1:3128")
+    monkeypatch.setenv("https_proxy", "http://127.0.0.1:3128")
+    monkeypatch.setenv("no_proxy", "localhost,127.0.0.1,::1,10.0.0.0/24")
+
+    client = CompletionClient(ModelConfig(
+        provider="openai", model="glm-5.2", base_url="http://10.0.0.7:8000/v1",
+        fallback=ModelConfig(provider="openai", model="local",
+                             base_url="http://127.0.0.1:8081/v1")))
+
+    assert _pool(client, "http://10.0.0.7:8000/v1/chat/completions") == "ConnectionPool"
+    assert _pool(client, "http://127.0.0.1:8081/v1/chat/completions") == "ConnectionPool"
+    # The proxy is still live for the internet — without this the two
+    # assertions above would also pass on a box with no proxy configured.
+    assert _pool(client, "https://clob.polymarket.com/markets") == "HTTPProxy"
+
+
+def test_only_provably_private_addresses_are_forced_direct():
+    """A public address, or a name that may resolve anywhere, could genuinely
+    need the proxy; only an address we can prove is private is pulled off it."""
+    from openthomas.llm import direct_mounts
+
+    assert direct_mounts(ModelConfig(base_url="http://10.0.0.7:8000/v1")) == {
+        "all://10.0.0.7": None}
+    assert direct_mounts(ModelConfig(base_url="http://[fd00::3]:8000/v1")) == {
+        "all://[fd00::3]": None}
+    assert direct_mounts(ModelConfig(base_url="https://api.openai.com/v1")) == {}
+    assert direct_mounts(ModelConfig(base_url="http://8.8.8.8:8000/v1")) == {}
+    assert direct_mounts(None) == {}
+    assert direct_mounts(ModelConfig(base_url=None)) == {}
+

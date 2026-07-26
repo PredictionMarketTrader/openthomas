@@ -14,6 +14,7 @@ a frontier API — or everything rides an existing subscription.
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import random
 import re
@@ -22,6 +23,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 
@@ -54,6 +56,37 @@ class CompletionError(RuntimeError):
     never crash the cycle."""
 
 
+def direct_mounts(*configs: ModelConfig | None) -> dict[str, None]:
+    """httpx mounts that keep private-network endpoints off the outbound proxy.
+
+    A box that needs an HTTP proxy to reach the internet (Polymarket, Kalshi,
+    the news APIs) still has to reach a vLLM on the LAN directly, and no_proxy
+    cannot express that: httpx matches its entries as literal hostnames, so a
+    CIDR block that reads like it covers the server — 10.0.0.0/24 written to
+    cover a peer at 10.0.0.7 — matches nothing, and every call to the model is
+    silently proxied instead. That failure is quiet and expensive: the proxy
+    answers 503, the client counts it as the endpoint being down, and the agent
+    rides its fallback model for hours with the primary sitting there healthy.
+
+    So decide by address rather than by trusting the environment to say it: a
+    private or loopback host is by definition not reachable through an internet
+    proxy. A None mount means "use the client's default transport" — no proxy —
+    and leaves every other destination on whatever the environment configured.
+    """
+    mounts: dict[str, None] = {}
+    for cfg in configs:
+        host = urlparse(cfg.base_url).hostname if cfg and cfg.base_url else None
+        if not host:
+            continue
+        try:
+            ip = ipaddress.ip_address(host)
+        except ValueError:
+            continue  # a name, not an address: no way to tell, leave it alone
+        if ip.is_private or ip.is_loopback:
+            mounts[f"all://[{host}]" if ip.version == 6 else f"all://{host}"] = None
+    return mounts
+
+
 class CompletionClient:
     def __init__(self, config: ModelConfig, http: httpx.Client | None = None,
                  run=subprocess.run, usage_sink=None, node: str = "", status_sink=None):
@@ -62,7 +95,9 @@ class CompletionClient:
         `status_sink`: optional fn(node=, active=, model=, reason=) -> None,
         called once per failover transition (primary→fallback or back)."""
         self.config = config
-        self.http = http or httpx.Client(timeout=config.timeout_s)
+        self.http = http or httpx.Client(
+            timeout=config.timeout_s,
+            mounts=direct_mounts(config, config.fallback))
         self.run = run  # injectable for tests
         self.usage_sink = usage_sink
         self.node = node
