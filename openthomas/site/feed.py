@@ -539,12 +539,15 @@ def _compute(settings: Settings, journal: Journal, status: dict) -> dict:
     what this run costs without doing the subtraction. `forecasts_recorded` is
     the journal's own count, which predates the ledger.
     """
+    from ..train.hub import aliases as model_aliases
+
     rows = UsageLedger(settings.home).read()
     started = status.get("run_started")
     session_rows = [r for r in rows if started and r.ts >= started]
+    names = model_aliases(settings)  # serving ids -> public names, shared with the dataset
     return {
-        **summarize(rows),
-        "session": {**summarize(session_rows), "since": started},
+        **summarize(rows, names),
+        "session": {**summarize(session_rows, names), "since": started},
         "ledger_started": min((r.ts for r in rows), default=None),
         "forecasts_recorded": journal.forecast_count(),
     }

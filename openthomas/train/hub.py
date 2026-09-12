@@ -55,9 +55,10 @@ def aliases(settings: Settings) -> dict[str, str]:
     """The one place that knows the model's public name. The journal records the
     endpoint's id; `site.model_label` is what a reader should see. Sharing this
     with the website keeps a serving alias from escaping through the dataset."""
+    out = dict(settings.site.model_aliases)
     if settings.site.model_label:
-        return {settings.forecaster.model: settings.site.model_label}
-    return {}
+        out[settings.forecaster.model] = settings.site.model_label
+    return out
 
 
 # --- cards ---------------------------------------------------------------------

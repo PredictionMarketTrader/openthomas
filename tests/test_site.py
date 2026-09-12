@@ -410,3 +410,35 @@ def test_a_torn_ledger_line_never_breaks_the_feed(settings):
     with ledger.path.open("a") as fh:
         fh.write('{"ts": "2026-07-10T01:00')  # process died mid-write
     assert summarize(ledger.read())["total"]["calls"] == 1
+
+
+def test_summarize_shows_public_names_and_merges_versions():
+    from openthomas.memory.usage import public_name
+
+    aliases = {"dsv*": "DeepSeek", "og-coding": "DeepSeek", "glm-5.2": "GLM-5.2"}
+    rows = [
+        Usage(ts="2026-09-01T10:00:00+00:00", node="forecast", provider="openai",
+              model="dsv4-flash-0731", prompt_tokens=100, completion_tokens=10),
+        Usage(ts="2026-09-02T10:00:00+00:00", node="forecast", provider="openai",
+              model="dsv4-pro-0901", prompt_tokens=100, completion_tokens=10),
+        Usage(ts="2026-09-03T10:00:00+00:00", node="reflect", provider="openai",
+              model="og-coding", prompt_tokens=100, completion_tokens=10),
+        Usage(ts="2026-07-10T10:00:00+00:00", node="forecast", provider="openai",
+              model="yolo", prompt_tokens=5, completion_tokens=1),
+    ]
+    s = summarize(rows, aliases)
+    # Versions merge under one name; ids without an alias stay as they are.
+    assert [m["model"] for m in s["by_model"]] == ["DeepSeek", "yolo"]
+    assert s["by_model"][0]["calls"] == 3
+    assert public_name("dsv5-0101", aliases) == "DeepSeek"
+    assert public_name("qwen", aliases) == "qwen"
+
+
+def test_feed_compute_uses_the_site_aliases(tmp_path, monkeypatch):
+    from openthomas.train.hub import aliases
+
+    settings = Settings(home=tmp_path)
+    settings.forecaster.model = "dsv4-flash-0731"
+    settings.site.model_label = "DeepSeek"
+    settings.site.model_aliases = {"og-coding": "DeepSeek"}
+    assert aliases(settings) == {"og-coding": "DeepSeek", "dsv4-flash-0731": "DeepSeek"}

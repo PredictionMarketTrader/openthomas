@@ -77,11 +77,26 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def summarize(rows: list[Usage]) -> dict:
+def public_name(model: str, aliases: dict[str, str] | None) -> str:
+    """The name a reader should see for a serving id: an exact alias, else the
+    longest matching "prefix*" alias, else the id itself."""
+    if not aliases:
+        return model
+    if model in aliases:
+        return aliases[model]
+    best = ""
+    for key, label in aliases.items():
+        if key.endswith("*") and model.startswith(key[:-1]) and len(key) > len(best):
+            best = key
+    return aliases[best] if best else model
+
+
+def summarize(rows: list[Usage], aliases: dict[str, str] | None = None) -> dict:
     """Totals plus the three cuts the public feed shows: node, model, day.
 
     `calls_without_usage` is the honest footnote — calls a provider billed but
-    never counted.
+    never counted. `aliases` maps serving ids to public names (see
+    SiteConfig.model_aliases); ids sharing a name are summed into one row.
     """
     def bucket() -> dict:
         return {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0,
@@ -93,7 +108,8 @@ def summarize(rows: list[Usage]) -> dict:
     by_day: dict[str, dict] = defaultdict(bucket)
 
     for r in rows:
-        targets = (total, by_node[r.node], by_model[r.model], by_day[r.ts[:10]])
+        targets = (total, by_node[r.node], by_model[public_name(r.model, aliases)],
+                   by_day[r.ts[:10]])
         for t in targets:
             t["calls"] += 1
             if r.total_tokens is None:

@@ -118,6 +118,12 @@ class SiteConfig(BaseModel):
     # what the agent thinks with. Name the model, and link its weights.
     model_label: str = ""  # "" falls back to the forecaster's configured model id
     model_url: str = ""  # where the weights live, e.g. a Hugging Face repo
+    # Serving id -> public name for every other endpoint the ledger has seen
+    # (reflector, proposer, past forecasters). A key ending in "*" matches by
+    # prefix, so a versioned id ("dsv4-flash-0731") keeps its label across
+    # upgrades: {"dsv*": "DeepSeek"}. The forecaster's own id is aliased by
+    # model_label and needs no entry here.
+    model_aliases: dict[str, str] = Field(default_factory=dict)
     max_theses: int = 12  # open positions + live edges shown
     max_board: int = 500  # weather markets plotted on the globe
     max_curve_points: int = 500  # equity curve is downsampled to this
