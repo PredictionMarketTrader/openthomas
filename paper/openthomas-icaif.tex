@@ -45,10 +45,10 @@
 \newcommand{\draftstatus}{\noindent\fcolorbox{tbdline}{tbdfill}{\parbox{\dimexpr\columnwidth-2\fboxsep-2\fboxrule}{%
 \footnotesize\textbf{Status of this draft.} This paper is written build-in-public.
 The experiments of Section~\ref{sec:results} are pre-registered with their
-decision rules; every cell marked \tbd{} is filled from a daily pipeline over a
-public, growing dataset, and every sentence marked in \textcolor{tbdline}{orange}
-is a conclusion that stands only if the named experiment agrees. Where the data
-contradict the thesis, the thesis will be rewritten, not the data.}}\par\medskip}
+decision rules, written before the data; every number is filled from a daily
+pipeline over a public, growing dataset and is regenerated as the window rolls
+forward. The first run contradicted the thesis, and the thesis was rewritten,
+not the data. Any cell that reads \tbd{} is awaiting the next run.}}\par\medskip}
 
 \begin{document}
 
@@ -64,36 +64,30 @@ Language-Model Agent on Weather Prediction Markets}
 \begin{abstract}
 In the one published benchmark of frontier language models trading real
 prediction markets with real capital, all six models lost money. We argue the
-failure is a \emph{harness} problem more than a forecasting one: the profitable
-signature is selectivity, sized asymmetry, exit discipline, and calibration,
-which are properties of the system around the model. We present
-\textbf{OpenThomas}, an open-source agent built as that harness and pointed at
-the one market category where harness quality is measurable: daily
-station-temperature markets on Kalshi and Polymarket, which settle every day
-against the U.S.\ National Weather Service climatological report for a named
-station. OpenThomas prices each strike from a seven-model numerical-weather
-consensus, corrects it by a per-station bias learned from leak-free hindcasts,
-widens its uncertainty with its own GenCast ensemble spread, lets a language
-model make a \emph{bounded} adjustment, blends with the market prior, and sizes
-with fractional Kelly under risk limits the model cannot override. Our main
-contribution is methodological: a leak-free replay on real order books with
-explicit windows, frozen datasets, local-time decision snapshots, official
-NBM/MOS baselines, and day-block bootstrap error bars, together with a
-\emph{pre-registered} ablation whose control (the un-blended model with its
-edge bar raised to the blend's activity) decides whether the edge is
-selectivity or a better probability. A preliminary 21-day replay had found a market-prior
-blend positive ($+$\$0.028/contract, 184 trades). The pre-registered replay over
-64 settlement days (3{,}349 markets) does not: every setting of the
-baseline-only rule loses ($-$\$0.034/contract in production, 95\% CI
-$[-0.069, +0.002]$), the blend and a raised edge bar are the same lever
-(identical expectancy at matched activity), and the seven-model consensus with
-learned station bias is indistinguishable from the NWS National Blend of Models
-(Brier 0.163 vs.\ 0.163). What survives is the harness: the drawdown kill-switch
-is the one rail that preserved capital under a losing rule, the
-self-improvement gate refused most mutations for thin samples and rolled one
-promotion back, and station biases persisted out of sample. We report the
-result that contradicts our own thesis, and what it changes. All data, frozen
-replay rows, and results are published daily.
+failure is a \emph{harness} problem more than a forecasting one, and test that
+claim where it is measurable: daily station-temperature markets on Kalshi and
+Polymarket, which settle every day against the U.S.\ National Weather Service
+report for a named station. \textbf{OpenThomas}, an open-source agent, prices
+each strike from a seven-model NWP consensus with a per-station bias learned
+from leak-free hindcasts, lets a language model make a \emph{bounded}
+adjustment, blends with the market prior, and sizes with fractional Kelly under
+risk limits the model cannot override. Our main contribution is methodological:
+a leak-free replay on real order books with explicit windows, frozen and hashed
+datasets, local-time decision snapshots, official NBM/MOS baselines, day-block
+bootstrap error bars, and a \emph{pre-registered} ablation whose control
+decides whether the edge is selectivity or a better probability. A preliminary
+21-day replay had found a market-prior blend positive ($+$\$0.028/contract).
+The pre-registered replay over 64 settlement days (3{,}349 markets) does not:
+every setting of the baseline-only rule loses ($-$\$0.034/contract, 95\% CI
+$[-0.069, +0.002]$), the blend and a raised edge bar are the same lever, and
+the consensus with learned bias ties the NWS National Blend of Models (Brier
+0.163 vs.\ 0.163). The bounded LLM adjustment improves Brier slightly and the
+clamp sits at the best of a sweep in which the unclamped model does worse. What
+survives is the harness: the drawdown kill-switch is the one rail that
+preserved capital under a losing rule, and the self-improvement gate refused
+thin evidence and rolled one promotion back. We report the result that
+contradicts our own thesis, and what it changes. All data, frozen replay rows,
+and results are published daily.
 \end{abstract}
 
 \keywords{prediction markets, large language model agents, autonomous trading,
@@ -143,8 +137,8 @@ weather markets, and, more importantly, a way of evaluating it that we believe
 is the honest one. The paper is written \emph{build-in-public}: the
 experiments in Section~\ref{sec:results} are pre-registered with their decision
 rules, the numbers are filled from a daily pipeline over a growing public
-dataset, and the conclusions follow the numbers. Cells marked \tbd{} are not
-yet filled at the time of this draft.
+dataset, and the conclusions follow the numbers; where they contradicted our
+thesis, we changed the thesis.
 
 Design commitments:
 \begin{itemize}
@@ -499,7 +493,8 @@ kernel where the optimizer cannot touch it.
 \label{sec:results}
 
 \paragraph{Protocol.} Window: settlement days from 2026-07-09 (the first day
-with archived lead-1 guidance for every station) to \tbd{E1}, rolling
+with archived lead-1 guidance for every station) to 2026-09-10 at the time
+of writing, rolling
 forward daily; ten U.S.\ stations, twelve Kalshi daily-temperature series
 (nine highs, three lows); station bias/$\sigma$ learned only from days before
 the window start; fees included (Kalshi taker: $\lceil 7\%\cdot p(1-p)\rceil$
@@ -586,13 +581,48 @@ about the day and the model loses \emph{more}, so the model is not being
 beaten by a book that already saw the morning; it is beaten by a book that
 prices the same guidance better.
 
-\paragraph{E4: does the LLM add anything?} \tbd{E4} \emph{(table of $\delta$
-vs.\ n, PnL/ct, Brier; baseline Brier $0.163$)}. The live paper run gives a
-first, unflattering answer (Section~\ref{sec:live}): the live forecaster's
-Brier over 41 settled trades is $0.43$ against a market Brier of $0.10$--$0.19$
-at the same stations, so the adjustment the live agent actually made hurt
-calibration. \pend{E4}{Whether a clamped adjustment on the replay rows does the
-same is what the sweep decides.}
+\paragraph{E4: does the LLM add anything?} Table~\ref{tab:llm}, on a
+400-row deterministic stride sample of the frozen dataset (a reasoning model
+costs about a minute per row). The bounded adjustment does not worsen
+calibration: Brier improves monotonically from the baseline's $0.1706$ to
+$0.1691$ at $\delta = 0.15$ and $0.25$, and the \emph{unclamped} model
+($\delta=\infty$) gives back part of that ($0.1694$). The production clamp is
+at the best of the sweep, which is the harness thesis in miniature: the model
+helps a little when it may only nudge, and helps less when it may replace.
+The effect is small ($-0.0015$ Brier, about $1\%$) and the PnL movement
+($+0.009 \to +0.020$/contract on $\sim$78 trades) is well inside a $\pm 0.10$
+interval; on this sample the baseline itself is slightly positive, which is
+the sampling noise the full-dataset E1 warns about. The live paper run tells
+a different story (Section~\ref{sec:live}): the live forecaster's Brier over
+its 41 \emph{traded} markets is $0.43$ against a market Brier of
+$0.10$--$0.19$ at the same stations. The two numbers are not the same
+quantity (replay scores every row; live scores only the markets the agent
+chose to trade, a selection biased toward its largest disagreements with the
+market), but the gap says where the damage is done: not in the clamped
+adjustment, but in the trade selection downstream of it.
+
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+\textbf{Clamp $\delta$} & \textbf{n} & \textbf{PnL/ct} & \textbf{95\% CI} & \textbf{Brier} \\
+\midrule
+0 (baseline, no LLM) & 79 & $+0.009$ & $[-0.087, +0.098]$ & 0.1706 \\
+$\pm 0.05$ & 77 & $+0.016$ & $[-0.089, +0.121]$ & 0.1698 \\
+$\pm 0.10$ & 77 & $+0.016$ & $[-0.089, +0.121]$ & 0.1694 \\
+$\pm 0.15$ (production) & 78 & $+0.020$ & $[-0.082, +0.123]$ & 0.1691 \\
+$\pm 0.25$ & 79 & $+0.019$ & $[-0.081, +0.121]$ & 0.1691 \\
+$\infty$ (unclamped) & 79 & $+0.019$ & $[-0.081, +0.121]$ & 0.1694 \\
+\bottomrule
+\end{tabular}
+\caption{E4: LLM-in-replay on 400 stride-sampled rows of the frozen dataset
+(digest 7c3fb9f21ab727e3): a self-hosted DeepSeek reasoning model, temperature
+0, one sample per row, prompt rebuilt from as-of data only; its probability is
+clipped to baseline $\pm\delta$ and pushed through the production decision
+rule. Brier is over all 400 rows; PnL over the trades the rule takes.}
+\label{tab:llm}
+\end{table}
 
 \paragraph{E5: against the official guidance.} On the same 3{,}349 markets,
 priced by the same rule with each source's own out-of-window bias: the
@@ -745,8 +775,11 @@ damage: the kill-switch preserved capital, the gate refused thin evidence and
 reverted an overfit promotion. A positive edge in this market, if it exists,
 needs what the replay strips out and the live agent has not yet turned into
 calibration: intraday observations, same-day runs, and a language-model
-adjustment that improves Brier rather than worsening it (E4). We report the
-result in public, losses included, and invite the community to check it.
+adjustment that keeps doing on live inputs what it does on replay rows: E4
+shows a clamped model improving calibration slightly and an unclamped one
+giving part of it back, while the live forecaster's Brier says the loss is
+made downstream, in which markets get traded. We report the result in public,
+losses included, and invite the community to check it.
 
 \begin{thebibliography}{14}
 \bibitem{predarena} J.~Zhang, G.~Liu, O.~Johansson, H.~Yitayew, K.~Ohly, and
@@ -805,7 +838,7 @@ Decision rule & $p = w\,\text{mid} + (1-w)\hat p$, $w=0.5$; trade the side with 
 Fees & Kalshi taker $\lceil 7\,p(1-p)\rceil$ cents per contract \\
 Error bars & day-block bootstrap, 2{,}000 resamples, seed 0 \\
 Risk profile (E7) & conservative: Kelly $0.15\times$, caps 5/10/25/50\%, kill-switch 15\%; \$1{,}000 bankroll \\
-LLM (E4) & \tbd{E4} model id, checkpoint date; temperature 0, single sample, prompt cached by exact text \\
+LLM (E4) & DeepSeek (self-hosted, OpenAI-compatible endpoint); temperature 0, single sample, prompt cached by exact text; 400-row deterministic stride sample \\
 Commands & \texttt{hindcast --days 92}; \texttt{replay --start --end --rows-out}; \texttt{ablate --rows-in --out} \\
 \bottomrule
 \end{tabular}

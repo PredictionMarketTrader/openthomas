@@ -73,5 +73,10 @@ byte-for-byte (the bootstrap is seeded).
   one lever, neither positive. E5: consensus Brier 0.1627 vs NBM 0.1631 — the
   "learnable local edge" claim is dropped. E7: only the kill-switch variant
   preserved capital. E8: 18 meta-cycles, 3 promotions, 1 rollback, 25/38
-  candidates refused for thin samples. E9: 11/12 biases keep sign. E3/E4
-  pending. The paper's abstract and conclusion were rewritten accordingly.
+  candidates refused for thin samples. E9: 11/12 biases keep sign. E3:
+  snapshot hour moves expectancy by at most 0.012 (lows 01/02: $-0.032$ /
+  $-0.035$; highs 09: $-0.046$), a third of the CI half-width. E4 (400-row
+  stride sample, DeepSeek local): Brier 0.1706 (no LLM) → 0.1691 at
+  $\delta=0.15$/$0.25$, unclamped 0.1694 — the clamp does not hurt and sits at
+  the best of the sweep; PnL $+0.009 \to +0.020$/ct is within noise. The
+  paper's abstract and conclusion were rewritten accordingly.
