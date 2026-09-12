@@ -121,16 +121,25 @@ class ForecastReplayer:
                 return key, row, None
 
         if misses:
-            with ThreadPoolExecutor(max_workers=REPLAY_WORKERS) as pool:
-                results = list(pool.map(one, misses))
+            # Each success is appended to the cache the moment it lands, not
+            # after the whole batch: a reasoning model can take a minute per
+            # row, and a run killed at row 400 of 3,000 should keep its 400.
             # Transient failures are simply not cached — retried next cycle.
-            successes = [(key, row, p) for key, row, p in results if p is not None]
-            if successes:
-                with self.cache_path.open("a") as f:
-                    for key, row, p in successes:
+            f = None  # opened on the first success, so an all-failed run leaves no file
+            try:
+                with ThreadPoolExecutor(max_workers=REPLAY_WORKERS) as pool:
+                    for key, row, p in pool.map(one, misses):
+                        if p is None:
+                            continue
                         out[row.ticker] = p
                         self._cache[key] = p
+                        if f is None:
+                            f = self.cache_path.open("a")
                         f.write(json.dumps({"k": key, "p": p}) + "\n")
+                        f.flush()
+            finally:
+                if f is not None:
+                    f.close()
         return out
 
     def compact(self) -> None:

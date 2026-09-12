@@ -458,6 +458,8 @@ def ablate(
     min_edge: float = typer.Option(0.08, help="production edge bar"),
     weight: float = typer.Option(0.5, help="production market-prior weight"),
     llm_deltas: str = typer.Option(None, help="E4: anchor clamps, e.g. 0,0.05,0.1,0.15,0.25,1"),
+    llm_sample: int = typer.Option(0, help="E4: score a deterministic stride sample of N rows "
+                                           "(0 = all; a reasoning model costs ~1 min/row)"),
     sources: str = typer.Option(None, help="E5: frozen row files priced from other sources"),
     simulate: bool = typer.Option(True, help="E7: bankroll simulation through the risk engine"),
     bankroll: float = typer.Option(1000.0, help="E7 starting bankroll"),
@@ -500,18 +502,24 @@ def ablate(
     if llm_deltas:
         from .improve.forecast_replay import ForecastReplayer
         from .improve.genome import active_params, params_from_settings
+        from .kernel.gate import sample_rows
+        from .memory.usage import UsageLedger
         params = {**params_from_settings(s), **active_params(s.home)}
         replayer = ForecastReplayer(
             s.forecaster, s.home / "llm-replay-cache.jsonl",
             decision_params={"risk.min_edge": min_edge, "risk.market_prior_weight": weight},
-            fee_fn=fee)
+            fee_fn=fee, usage_sink=UsageLedger(s.home).record)
         template = params.get("forecast_prompt")
-        results["llm"] = {"model": s.forecaster.model, "rows": len(rows),
-                          "baseline_brier": _brier(rows), "deltas": []}
+        llm_rows = sample_rows(rows, llm_sample) if llm_sample else rows
+        results["llm"] = {"model": s.forecaster.model, "rows": len(llm_rows),
+                          "sample": "stride" if llm_sample else "all",
+                          "baseline_on_sample": summarize(decide(llm_rows, fee, min_edge, weight),
+                                                          ci=True),
+                          "baseline_brier": _brier(llm_rows), "deltas": []}
         for d in llm_deltas.split(","):
             delta = float(d)
-            with console.status(f"LLM-in-replay, clamp ±{delta:.2f} over {len(rows)} rows…"):
-                trades, pairs = replayer.strategy(template, delta)(rows)
+            with console.status(f"LLM-in-replay, clamp ±{delta:.2f} over {len(llm_rows)} rows…"):
+                trades, pairs = replayer.strategy(template, delta)(llm_rows)
             from .forecast.calibration import brier_score
             results["llm"]["deltas"].append({
                 "delta": delta, "brier": brier_score(pairs) if pairs else None,

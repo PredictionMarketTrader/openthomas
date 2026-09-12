@@ -576,8 +576,15 @@ per one contract per trade.}
 \paragraph{E2--E3: robustness.} Of the 31 grid cells with at least 18 trades,
 all 31 are negative (range $-0.029$ to $-0.140$/contract); the only positive
 cell ($w=0.75$, min\_edge $0.15$) has six trades. The E1 conclusion is not a
-property of one cell. Snapshot sensitivity: \tbd{E3} \emph{(PnL/ct with lows at
-local 01:00 and 02:00 and highs at 09:00, vs.\ the E1 half-width)}.
+property of one cell. Snapshot sensitivity: moving the low snapshot from local
+00:00 to 01:00 or 02:00 changes production expectancy from $-0.034$ to $-0.032$
+and $-0.035$; moving the high snapshot from 11:00 back to 09:00 changes it to
+$-0.046$ $[-0.083, -0.010]$. The largest shift ($0.012$) is a third of the E1
+half-width ($0.035$), so timing is not doing the work. The direction of the
+09:00 result matters more than its size: at 09:00 the book knows \emph{less}
+about the day and the model loses \emph{more}, so the model is not being
+beaten by a book that already saw the morning; it is beaten by a book that
+prices the same guidance better.
 
 \paragraph{E4: does the LLM add anything?} \tbd{E4} \emph{(table of $\delta$
 vs.\ n, PnL/ct, Brier; baseline Brier $0.163$)}. The live paper run gives a
