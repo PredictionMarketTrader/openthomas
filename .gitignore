@@ -20,3 +20,6 @@ deploy/
 paper/*.aux
 paper/*.log
 paper/*.out
+
+# macOS Finder metadata
+.DS_Store
