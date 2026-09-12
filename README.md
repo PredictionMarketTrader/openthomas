@@ -116,7 +116,7 @@ Any OpenAI-compatible server works — Ollama, vLLM, llama.cpp. If you have GPUs
 **Subscriptions instead of API credits**: set `provider: claude-cli` (Claude Code) or `provider: codex-cli` (OpenAI Codex) in `config.yaml` and OpenThomas bills your existing Claude/ChatGPT subscription. Every LLM node is configured independently — run the high-token reflection pass on a local server and route only the hardest forecasts to a frontier model:
 
 ```yaml
-forecaster: { provider: openai, model: glm-5.2, base_url: "http://localhost:8000/v1" }
+forecaster: { provider: openai, model: deepseek, base_url: "http://localhost:8000/v1" }  # the id your endpoint serves
 reflector:  { provider: claude-cli, model: sonnet }
 ```
 
