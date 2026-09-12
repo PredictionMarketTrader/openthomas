@@ -63,3 +63,15 @@ openthomas ablate --rows-in rows.jsonl --out results.json
 Frozen row files and results are also on the Hugging Face dataset under
 `replay/`; `ablate --rows-in` on a downloaded file reproduces its `.md`
 byte-for-byte (the bootstrap is seeded).
+
+## Results log
+
+- **2026-09-12, first run** (`rows-2026-07-09-to-2026-09-11`, digest
+  `7c3fb9f21ab727e3`, 3,349 rows, 64 days): every E1 row negative
+  (production $-0.034$/ct, CI $[-0.069, +0.002]$); the threshold-only control
+  equals the blend ($-0.034$ at $n=618$ vs $625$) — blend and selectivity are
+  one lever, neither positive. E5: consensus Brier 0.1627 vs NBM 0.1631 — the
+  "learnable local edge" claim is dropped. E7: only the kill-switch variant
+  preserved capital. E8: 18 meta-cycles, 3 promotions, 1 rollback, 25/38
+  candidates refused for thin samples. E9: 11/12 biases keep sign. E3/E4
+  pending. The paper's abstract and conclusion were rewritten accordingly.

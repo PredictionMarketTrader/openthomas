@@ -81,14 +81,19 @@ explicit windows, frozen datasets, local-time decision snapshots, official
 NBM/MOS baselines, and day-block bootstrap error bars, together with a
 \emph{pre-registered} ablation whose control (the un-blended model with its
 edge bar raised to the blend's activity) decides whether the edge is
-selectivity or a better probability. A preliminary 21-day replay (968 settled
-markets) found a naked model-vs-market rule losing ($-$\$0.007/contract, 425
-trades) and a market-prior blend positive ($+$\$0.028, 184 trades); the
-pre-registered replay over \tbd{E1} settled days
-\pend{E1}{confirms / rejects} that selectivity is the edge. We also describe a
-self-improvement loop whose safety comes from keeping the evaluator off the
-optimizer's edit surface; its empirical record is reported as it accrues. All
-data, frozen replay rows, and results are published daily.
+selectivity or a better probability. A preliminary 21-day replay had found a market-prior
+blend positive ($+$\$0.028/contract, 184 trades). The pre-registered replay over
+64 settlement days (3{,}349 markets) does not: every setting of the
+baseline-only rule loses ($-$\$0.034/contract in production, 95\% CI
+$[-0.069, +0.002]$), the blend and a raised edge bar are the same lever
+(identical expectancy at matched activity), and the seven-model consensus with
+learned station bias is indistinguishable from the NWS National Blend of Models
+(Brier 0.163 vs.\ 0.163). What survives is the harness: the drawdown kill-switch
+is the one rail that preserved capital under a losing rule, the
+self-improvement gate refused most mutations for thin samples and rolled one
+promotion back, and station biases persisted out of sample. We report the
+result that contradicts our own thesis, and what it changes. All data, frozen
+replay rows, and results are published daily.
 \end{abstract}
 
 \keywords{prediction markets, large language model agents, autonomous trading,
@@ -428,12 +433,16 @@ worsening calibration got lucky). Each of the four is a unit test in the
 repository. Generation 0 is the operator's config: the human's settings win
 until the loop has promoted evidence-backed changes past them.
 
-\paragraph{Empirical status.} The architecture is shipped; its record is thin.
-Over \tbd{E8} weeks of daily meta-cycles the loop has recorded
-\tbd{E8} promotions, \tbd{E8} rollbacks and \tbd{E8} Brier vetoes
-(Table~\ref{tab:lineage}); the gate's four anti-gaming rules are demonstrated
-as adversarial test cases. We make no claim that the loop has improved trading
-until the lineage says so out of sample. Improvement axes are unified as
+\paragraph{Empirical status.} The architecture is shipped; its record is
+short. Over 18 daily meta-cycles (2026-07-10 to 09-06) the loop recorded 3
+promotions, 1 rollback and 0 Brier vetoes (Table~\ref{tab:lineage}); of the
+candidates it scored, most (25 of 38) were refused for the thin-sample rule
+(held-in $n<20$), which is the gate doing its job on a small window rather than
+the loop learning. The one promotion that reached the fresh window with a
+worse record than its parent was reverted two days later. We make no claim
+that the loop has improved trading: the active generation
+(min\_edge $0.15$, $w=0.6$) scored $-$\$3.00 held-in against the champion's
+$-$\$6.22, i.e.\ it lost less. Improvement axes are unified as
 mutation operators feeding the same accept mechanism: playbook rules and
 calibration refits, decision-parameter and prompt mutation (shipped), then
 workflow structure, then agent-plane code diffs (adding shadow trading and
@@ -533,62 +542,138 @@ being a better probability, and 184 trades in one three-week window carries no
 error bar. It motivated E1's control and is not used for any conclusion below.
 
 \paragraph{E1: ablation with the selectivity control.}
-Table~\ref{tab:ablation} \tbd{E1}. Conclusion: \pend{E1}{the control's interval
-[excludes / includes] zero, so the edge is [selectivity / the blend].}
+Table~\ref{tab:ablation}. Every row loses. The learned station bias helps a
+little ($-0.041 \to -0.037$); the blend helps a little more ($-0.034$) and
+halves activity; and the control, the un-blended model with its edge bar raised
+from $0.08$ to $0.19$ until it trades as rarely as the blend, lands on the
+\emph{same} expectancy ($-0.034$, $n=618$ vs.\ $625$) with an interval that
+includes zero on both. The pre-registered rule therefore returns neither
+answer: the blend and selectivity are one lever, and neither produces positive
+expectancy with this baseline. The v0 result ($+$\$0.028 over three weeks) does
+not reappear: the same weeks in this dataset are $+0.004$ (W28) and $+0.074$
+(W30) against $-0.066$ (W29), and the 64-day mean is negative.
 
 \begin{table}[t]
 \centering
 \small
-\begin{tabular}{@{}p{3.3cm}rrrr@{}}
+\begin{tabular}{@{}p{3.1cm}rrrr@{}}
 \toprule
 \textbf{Rule} & \textbf{n} & \textbf{PnL/ct} & \textbf{95\% CI} & \textbf{maxDD} \\
 \midrule
-Naked model vs market & \tbd{} & \tbd{} & \tbd{} & \tbd{} \\
-\quad $+$ learned station bias & \tbd{} & \tbd{} & \tbd{} & \tbd{} \\
-\quad\quad $+$ market blend (prod.) & \tbd{} & \tbd{} & \tbd{} & \tbd{} \\
-Control: no blend, bar raised & \tbd{} & \tbd{} & \tbd{} & \tbd{} \\
+Naked model vs market & 1501 & $-0.041$ & $[-0.058, -0.023]$ & 61.8 \\
+\quad $+$ learned station bias & 1407 & $-0.037$ & $[-0.056, -0.016]$ & 55.5 \\
+\quad\quad $+$ market blend (prod.) & 625 & $-0.034$ & $[-0.069, +0.002]$ & 23.7 \\
+Control: no blend, bar $0.19$ & 618 & $-0.034$ & $[-0.070, +0.002]$ & 23.2 \\
 \bottomrule
 \end{tabular}
-\caption{E1 on the frozen dataset \tbd{E1}, \tbd{days} settlement days,
-\tbd{rows} rows. CI: day-block bootstrap. maxDD: of the daily PnL path, \$ per
-one contract per trade.}
+\caption{E1 on the frozen dataset (window 2026-07-09 to 09-10, digest
+7c3fb9f21ab727e3), 64 settlement days, 3{,}349 rows, win rates 37--38\%
+throughout. CI: day-block bootstrap. maxDD: of the daily PnL path, \$
+per one contract per trade.}
 \label{tab:ablation}
 \end{table}
 
-\paragraph{E2--E3: robustness.} \tbd{E2} \emph{(grid summary, which cells are positive)}. \tbd{E3} \emph{(PnL/ct at each snapshot hour vs the E1 half-width)}.
+\paragraph{E2--E3: robustness.} Of the 31 grid cells with at least 18 trades,
+all 31 are negative (range $-0.029$ to $-0.140$/contract); the only positive
+cell ($w=0.75$, min\_edge $0.15$) has six trades. The E1 conclusion is not a
+property of one cell. Snapshot sensitivity: \tbd{E3} \emph{(PnL/ct with lows at
+local 01:00 and 02:00 and highs at 09:00, vs.\ the E1 half-width)}.
 
-\paragraph{E4: does the LLM add anything?} \tbd{E4} \emph{(table of $\delta$ vs n, PnL/ct, Brier; baseline Brier)}. \pend{E4}{The bounded adjustment [improves /
-does not change / worsens] Brier and [adds / does not add] expectancy; the
-production clamp $\pm0.15$ [is / is not] the best of the sweep.}
+\paragraph{E4: does the LLM add anything?} \tbd{E4} \emph{(table of $\delta$
+vs.\ n, PnL/ct, Brier; baseline Brier $0.163$)}. The live paper run gives a
+first, unflattering answer (Section~\ref{sec:live}): the live forecaster's
+Brier over 41 settled trades is $0.43$ against a market Brier of $0.10$--$0.19$
+at the same stations, so the adjustment the live agent actually made hurt
+calibration. \pend{E4}{Whether a clamped adjustment on the replay rows does the
+same is what the sweep decides.}
 
-\paragraph{E5: against the official guidance.} \tbd{E5} \emph{(consensus vs NBM vs GFS MOS on the paired rows: Brier of the baseline probability and PnL/ct of the same rule)}. \pend{E5}{The seven-model consensus with learned bias [beats / ties /
-loses to] NBM.}
+\paragraph{E5: against the official guidance.} On the same 3{,}349 markets,
+priced by the same rule with each source's own out-of-window bias: the
+seven-model consensus scores Brier $0.1627$, NBM $0.1631$, GFS MOS $0.1651$
+($n=3{,}344$ paired); PnL/contract $-0.034$, $-0.055$ $[-0.088, -0.021]$, and
+$-0.035$ $[-0.069, +0.001]$. The consensus with learned bias ties NBM.
+\textbf{We drop the ``learnable local edge'' claim:} the correction is real
+(E9) but it recovers what the NWS's own blend already publishes, and the
+market reads that.
 
-\paragraph{E6: where the edge lives.} \tbd{E6} \emph{(per-station and per-week table; fraction of stations/weeks positive)}.
+\paragraph{E6: where the edge lives.} Four of ten stations are positive
+(Chicago $+0.071$, $n=59$; Miami $+0.040$; New York $+0.033$; San Antonio
+$+0.015$, $n=29$) and six negative (Atlanta $-0.147$, Denver $-0.093$, Austin
+$-0.065$, Los Angeles $-0.064$, Philadelphia $-0.049$, Dallas $-0.022$); three
+of ten weeks are positive. Lows ($-0.006$, $n=71$) lose less than highs
+($-0.038$, $n=554$), consistent with the local-midnight snapshot leaving the
+low a genuinely open contest while the 11:00 book already knows the morning.
+None of the positive stations' intervals exclude zero on their own.
 
-\paragraph{E7: the harness, scored.} \tbd{E7} \emph{(final bankroll, return, max drawdown and binding-constraint counts for flat / Kelly / Kelly+caps / Kelly+caps+kill on a \$1{,)}000 paper bankroll}. \pend{E7}{Caps [reduce /
-do not reduce] drawdown at [small / large] cost in return; the kill-switch
-[fired / did not fire] in the window.}
-
-\paragraph{E8--E9.} Table~\ref{tab:lineage} \tbd{E8}; station bias halves
-\tbd{E9}.
+\paragraph{E7: the harness, scored.} The 625 production trades through the
+risk engine on a \$1{,}000 paper bankroll (Table~\ref{tab:sim}). With a losing
+rule, sizing is a multiplier on the loss: flat 1\% stakes lose 10\%, fractional
+Kelly 23\% with a 71\% drawdown, and the concentration caps change which losses
+are taken rather than whether ($-42\%$: they cut the winners' size on
+multi-strike days as much as the losers'). The kill-switch is the rail that
+mattered: it halted trading on 2026-07-17 after 11 entries, refused the next
+547, and ended the window at $+12\%$ with a 15\% drawdown, which is the
+honest reading of ``the harness is the edge'' on this data: the harness did not
+create an edge, it stopped a losing rule from compounding.
 
 \begin{table}[t]
 \centering
 \small
-\begin{tabular}{@{}lllrrl@{}}
+\begin{tabular}{@{}lrrrl@{}}
 \toprule
-\textbf{gen} & \textbf{parent} & \textbf{operator} & \textbf{held-in} & \textbf{held-out} & \textbf{decision} \\
+\textbf{Sizing} & \textbf{Return} & \textbf{maxDD} & \textbf{Entered} & \textbf{Halted} \\
 \midrule
-0 & --- & operator & \tbd{} & \tbd{} & baseline \\
-\tbd{} & \tbd{} & \tbd{} & \tbd{} & \tbd{} & \tbd{} \\
+Flat 1\% & $-10.2\%$ & 22.8\% & 88 & --- \\
+Kelly $0.15\times$ & $-23.3\%$ & 70.5\% & 88 & --- \\
+Kelly $+$ caps & $-41.5\%$ & 77.2\% & 88 & --- \\
+Kelly $+$ caps $+$ kill-switch & $+12.0\%$ & 15.2\% & 11 & 07-17 \\
 \bottomrule
 \end{tabular}
-\caption{E8: self-improvement lineage as exported by the loop
-(\tbd{E8} meta-cycles). Empty until the loop has run long enough to
-say anything.}
+\caption{E7: the same 625 trades under each sizing regime (conservative
+profile: Kelly $0.15\times$, caps 5/10/25/50\%, kill-switch at 15\% drawdown;
+537 of the trades fail the live engine's fee-aware edge check at their
+snapshot price and are never entered). ``Entered'' counts positions opened.}
+\label{tab:sim}
+\end{table}
+
+\paragraph{E8--E9.} The lineage is Table~\ref{tab:lineage}. Station bias
+persists: on lead-1 highs and lows, 11 of 12 (station, kind) biases keep their
+sign between the first 123 verified days and the last 32 (the exception,
+Chicago Midway, is $-0.1$ vs.\ $+0.3$, i.e.\ zero both times), and magnitudes
+hold (Miami $+2.0 \to +1.8$, Philadelphia $+2.6 \to +1.6$, Atlanta
+$+2.4 \to +2.1$, LAX $-1.0 \to -1.2$, Austin low $-2.1 \to -3.8$). The
+correction is real; E5 says the market already has it.
+
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{@{}rrlllrrl@{}}
+\toprule
+\textbf{gen} & \textbf{par.} & \textbf{by} & \textbf{edge} & \textbf{$w$} & \textbf{in} & \textbf{out} & \textbf{status} \\
+\midrule
+0 & --- & oper. & $0.08$ & $0.5$ & --- & --- & baseline \\
+1 & 0 & LLM & $0.12$ & $0.6$ & $+2.31$ & $+1.63$ & prom.\ 07-23 \\
+2 & 1 & rand. & $0.115$ & $0.59$ & $+9.22$ & $+1.16$ & 07-25, reverted \\
+3 & 1 & LLM & $0.15$ & $0.6$ & $-3.00$ & $-1.32$ & 09-01, active \\
+\bottomrule
+\end{tabular}
+\caption{E8: self-improvement lineage as exported by the loop (18 meta-cycles,
+2026-07-10 to 09-06). edge: min\_edge; $w$: market-prior weight; in/out:
+held-in and held-out total PnL (\$) at promotion. Generation 2 was reverted when its
+parent beat it on the rolled-forward window.}
 \label{tab:lineage}
 \end{table}
+
+\paragraph{The live paper run.}
+\label{sec:live}
+The reference agent has paper-traded continuously since July (1{,}911 cycles,
+\$100{,}000 allocated) with every live-only advantage on: intraday
+observations, same-day model runs, the LLM adjustment, calibration. At the
+time of writing: 41 settled trades, realized $-$\$1{,}679, unrealized
+$+$\$593, total $-1.1\%$, maximum drawdown $3.0\%$, win rate 24\% with average
+win \$243 against average loss \$132. The asymmetry is the harness's; the
+expectancy is not there. Its forecaster's Brier ($0.43$) against the market's
+($0.10$--$0.19$) is the sharpest single number in this paper.
 
 \section{Discussion and limitations}
 
@@ -645,8 +730,16 @@ where the resulting edge can be measured densely, objectively, and without
 leakage. The contribution we are surest of is the measurement: explicit
 windows, frozen and hashed datasets, local-time snapshots, official baselines,
 day-block error bars, and a pre-registered control that can falsify our own
-thesis. \pend{E1}{On the data so far the edge is [selectivity / the blend].}
-We report it in public, losses included, and invite the community to check it.
+thesis. On 64 days of data the pre-registered test came back against us: no
+setting of the baseline-only rule has positive expectancy, the blend and the
+edge bar are the same lever, and the learned station correction is what the
+NWS blend already publishes. What the harness demonstrably did was limit the
+damage: the kill-switch preserved capital, the gate refused thin evidence and
+reverted an overfit promotion. A positive edge in this market, if it exists,
+needs what the replay strips out and the live agent has not yet turned into
+calibration: intraday observations, same-day runs, and a language-model
+adjustment that improves Brier rather than worsening it (E4). We report the
+result in public, losses included, and invite the community to check it.
 
 \begin{thebibliography}{14}
 \bibitem{predarena} J.~Zhang, G.~Liu, O.~Johansson, H.~Yitayew, K.~Ohly, and
@@ -687,8 +780,7 @@ Machine: Open-ended evolution of self-improving agents. arXiv:2505.22954, 2025.
 \section{Reproducibility details}
 \label{app:repro}
 
-\begin{table}[h]
-\centering
+\begin{center}
 \small
 \begin{tabular}{@{}p{3.2cm}p{4.6cm}@{}}
 \toprule
@@ -710,7 +802,7 @@ LLM (E4) & \tbd{E4} model id, checkpoint date; temperature 0, single sample, pro
 Commands & \texttt{hindcast --days 92}; \texttt{replay --start --end --rows-out}; \texttt{ablate --rows-in --out} \\
 \bottomrule
 \end{tabular}
-\caption{Everything needed to regenerate the tables from the published files.}
-\end{table}
+\captionof{table}{Everything needed to regenerate the tables from the published files.}
+\end{center}
 
 \end{document}
