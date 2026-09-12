@@ -12,8 +12,12 @@ Python 3.10+, package in `openthomas/`, tests in `tests/` (pytest), deps via
 - `openthomas/forecast/` — LLM ensemble engine + Platt calibration
 - `openthomas/research/news.py` — keyless news retrieval (GDELT, Google News RSS)
 - `openthomas/edge/scanner.py` — pre-LLM filters + cross-platform arb detection
-- `openthomas/risk/engine.py` — Kelly sizing, caps, drawdown kill-switch
+- `openthomas/risk/engine.py` — Kelly sizing, caps, drawdown kill-switch;
+  `risk/simulate.py` replays frozen trades through it (paper experiment E7)
 - `openthomas/memory/` — SQLite journal + lesson distillation + LLM token ledger
+- `openthomas/weather/replay.py` — leak-free replay (explicit windows, frozen
+  row files); `weather/ablation.py` — the paper's offline experiments;
+  `weather/mos.py` — NBM / GFS MOS as-of baselines (docs/EXPERIMENTS.md)
 - `openthomas/kernel/` — parameter bounds + promotion gate for self-improvement
   (kernel plane: operator-owned, see docs/RSI.md)
 - `openthomas/improve/` — the evolution loop: propose → gate → promote/rollback
@@ -23,9 +27,11 @@ Python 3.10+, package in `openthomas/`, tests in `tests/` (pytest), deps via
   Hugging Face push for datasets and adapters (docs/TRAINING.md). The harness
   ships to GitHub, the model plane ships to HF (docs/RSI.md).
 - `openthomas/cli.py` — typer CLI
-  (`init/scan/run/report/vital/publish/improve/dataset/push-model`)
+  (`init/scan/run/report/vital/publish/hindcast/replay/ablate/improve/dataset/push-model/push-forecasts`)
 - `openthomas/mcp_server.py` — MCP server (`openthomas-mcp`); paper-only by design
-- `docs/DESIGN.md` — architecture rationale; `docs/EDGE.md` — strategy basis
+- `docs/DESIGN.md` — architecture rationale; `docs/EDGE.md` — strategy basis;
+  `docs/EXPERIMENTS.md` — the paper's pre-registered experiments and the
+  daily data pipeline (`scripts/paper_data.sh`)
 
 ## Hard rules
 

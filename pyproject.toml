@@ -31,10 +31,10 @@ dependencies = [
 [project.optional-dependencies]
 polymarket = ["polymarket-client"]  # official unified SDK (pre-release); py-clob-client is archived
 kalshi = ["cryptography>=42.0"]
-mcp = ["mcp>=1.2"]
+mcp = ["mcp>=1.2,<2"]  # 2.x renamed FastMCP; mcp_server.py targets the 1.x API
 hub = ["huggingface-hub>=0.30"]  # publish datasets/adapters; no torch needed
 train = ["torch", "transformers", "peft", "datasets", "huggingface-hub>=0.30"]
-dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.4", "mcp>=1.2"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.4", "mcp>=1.2,<2"]
 
 [project.scripts]
 openthomas = "openthomas.cli:app"

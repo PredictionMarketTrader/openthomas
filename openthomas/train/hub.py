@@ -280,3 +280,138 @@ def pull_dataset(repo_id: str, revision: str = "main", token: str | None = None)
 
 __all__ = ["HubError", "dataset_card", "dataset_repo", "model_card", "pull_dataset",
            "push_adapter", "push_dataset", "trainable"]
+
+
+# --- weather forecasts: the as-of record ----------------------------------------
+
+# Everything the weather baseline reads or produces, as it stood at push time.
+# Each is append-only or a dated snapshot, so a dataset commit is a timestamped
+# record of what the agent knew — the same property the journal dataset has.
+FORECAST_FILES = (
+    ("weather-verification.jsonl", "data/nwp-guidance-and-settlements.jsonl",
+     "as-of daily extremes from seven public NWP models (Open-Meteo previous-runs API) "
+     "at leads 0-5, plus official settlements (ACIS / NWS CLI)"),
+    ("local-models.jsonl", "data/own-models.jsonl",
+     "station-day extremes from OpenThomas' own GraphCast / Pangu inference runs, "
+     "with issue timestamps"),
+    ("gencast-spread.json", "data/gencast-spread.json",
+     "per station-day ensemble spread of the latest GenCast run (sigma multiplier input)"),
+    ("graphcast-tempseries.json", "data/graphcast-tempseries.json",
+     "coarse global 2m-temperature daily series from the latest GraphCast run"),
+    ("mos-nbm.jsonl", "data/baseline-nbm.jsonl",
+     "as-of NBM daily max/min per station (IEM MOS archive), the official-guidance baseline"),
+    ("mos-gfsmos.jsonl", "data/baseline-gfsmos.jsonl",
+     "as-of GFS MOS daily max/min per station (IEM MOS archive)"),
+)
+
+
+def forecasts_repo(settings: Settings, repo_id: str | None = None) -> str:
+    if repo_id:
+        return repo_id
+    if not settings.hub.org:
+        raise HubError("set hub.org in ~/.openthomas/config.yaml or pass --repo")
+    return f"{settings.hub.org}/weather-forecasts"
+
+
+def _count_lines(path: Path) -> int:
+    with path.open("rb") as f:
+        return sum(1 for _ in f)
+
+
+def forecasts_card(present: list[tuple[str, str, int]], replay_files: list[str],
+                   settings: Settings) -> str:
+    rows = "\n".join(f"| `{dst}` | {desc} | {n:,} |" for dst, desc, n in present)
+    replay = "\n".join(f"- `{p}`" for p in replay_files) or "- (none yet)"
+    github = settings.site.github or "https://github.com/PredictionMarketTrader/openthomas"
+    return f"""---
+license: mit
+tags:
+- weather
+- numerical-weather-prediction
+- prediction-markets
+- forecasting
+- graphcast
+- gencast
+- build-in-public
+pretty_name: OpenThomas weather forecasts
+---
+
+# OpenThomas weather forecasts
+
+Every forecast the [OpenThomas](https://openthomas.com) weather desk read or
+produced, as-of. Pushed daily from the trading box, so each commit is a
+timestamped record of what was known when — the leak-free substrate behind
+the paper's replay experiments (`docs/EXPERIMENTS.md` in the
+[harness repository]({github})).
+
+| file | what | lines / bytes |
+|---|---|---|
+{rows}
+
+## Frozen replay datasets and experiment results
+
+`replay/` holds the frozen decision-time rows (one JSONL per window, digest
+in the filename) and the experiment results scored on them. A row carries
+the settlement station and day, the baseline probability at the snapshot,
+the Kalshi bid/ask at that snapshot, and the outcome — never anything the
+agent could not have known at decision time.
+
+{replay}
+
+## Conventions
+
+- Temperatures are °F; settlements are the integer daily extreme from the
+  NWS Climatological Report (via ACIS), the number the markets settle on.
+- `lead` is days ahead: lead 1 for target day *d* is what the model published
+  on *d − 1*.
+- NBM / GFS MOS baselines use the *d − 1* 12Z run, read from the IEM MOS
+  archive as issued.
+- Own-model rows carry `issued_at`; the run that produced them is identified
+  by that timestamp and the model name.
+
+*Paper trading. Nothing here is financial advice.*
+"""
+
+
+def push_forecasts(settings: Settings, repo_id: str | None = None,
+                   extra: list[Path] | tuple[Path, ...] = (), token: str | None = None) -> str:
+    """Upload the weather desk's as-of record (FORECAST_FILES that exist) plus
+    any frozen replay datasets / results under `extra`. Returns the commit sha."""
+    from huggingface_hub import CommitOperationAdd
+
+    api = _api(token)
+    repo_id = forecasts_repo(settings, repo_id)
+    api.create_repo(repo_id=repo_id, repo_type="dataset",
+                    private=settings.hub.private, exist_ok=True)
+
+    home = Path(settings.home)
+    ops = []
+    present: list[tuple[str, str, int]] = []
+    for src, dst, desc in FORECAST_FILES:
+        path = home / src
+        if not path.exists() or path.stat().st_size == 0:
+            continue
+        n = _count_lines(path) if path.suffix == ".jsonl" else path.stat().st_size
+        present.append((dst, desc, n))
+        ops.append(CommitOperationAdd(dst, str(path)))
+    replay_files = []
+    for path in extra:
+        path = Path(path)
+        if path.exists():
+            dst = f"replay/{path.name}"
+            replay_files.append(dst)
+            ops.append(CommitOperationAdd(dst, str(path)))
+    if not ops:
+        raise HubError("nothing to push: no forecast files under " + str(home))
+
+    scratch = home / "hub"
+    scratch.mkdir(parents=True, exist_ok=True)
+    card = scratch / "forecasts-README.md"
+    card.write_text(forecasts_card(present, replay_files, settings))
+    ops.append(CommitOperationAdd("README.md", str(card)))
+
+    info = api.create_commit(
+        repo_id=repo_id, repo_type="dataset", operations=ops,
+        commit_message=f"forecasts @ {len(present)} files, {len(replay_files)} replay artifacts",
+    )
+    return info.oid
